@@ -60,14 +60,15 @@ type InitReconciler struct {
 func (r *InitReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	obj := r.Object.DeepCopyObject().(v1alpha1.InnerObject)
 
-	if err := r.Client.Get(context.TODO(), req.NamespacedName, obj); err != nil {
-		if apierrors.IsNotFound(err) {
-			r.Log.Info("chaos not found")
-		} else {
-			// TODO: handle this error
-			r.Log.Error(err, "unable to get chaos")
-		}
+	err := r.Client.Get(context.TODO(), req.NamespacedName, obj)
+
+	if err != nil && !apierrors.IsNotFound(err) {
+		r.Log.Error(err, "unable to get chaos")
 		return ctrl.Result{}, nil
+	}
+
+	if err != nil && apierrors.IsNotFound(err) {
+		r.Log.Info("chaos not found")
 	}
 
 	if !obj.IsDeleted() {
