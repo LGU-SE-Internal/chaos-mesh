@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - 'helm/**'
-      - '.github/workflows/release-helm_chart.yml'
+      - '.github/workflows/release_helm_chart.yml'
 
 jobs:
   deploy:
@@ -22,7 +22,7 @@ jobs:
 
     - name: Run publish script
       run: |
-        bash scripts/publish.sh
+        bash hack/publish_chart.sh
 
     - name: Publish to gh-pages
       uses: peaceiris/actions-gh-pages@v4
