@@ -13,7 +13,7 @@ An RFC (Request for Comments) is a design document that describes a new feature,
 
 ## RFC List
 
-- [bpftime-userspace-chaos.md](./bpftime-userspace-chaos.md) - Proposal for adding userspace fault injection using bpftime/eBPF
+- [bpftime-userspace-chaos.md](./bpftime-userspace-chaos.md) - Proposal for adding userspace fault injection using bpftime/eBPF ([中文版](./bpftime-userspace-chaos-zh.md))
 
 ## How to Contribute an RFC
 
