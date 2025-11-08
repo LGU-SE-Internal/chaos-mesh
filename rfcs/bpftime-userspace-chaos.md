@@ -1008,6 +1008,403 @@ func (webhook *UserspaceChaosWebhook) ValidateCreate(obj runtime.Object) error {
 }
 ```
 
+### Multi-Language Support Considerations
+
+Supporting fault injection across different programming language paradigms requires understanding their runtime characteristics and adapting the approach accordingly. This section details support strategies for compiled, interpreted, and VM-based languages.
+
+#### Language Categories and Support Strategy
+
+##### 1. Compiled Languages (Native Binaries)
+
+**Languages**: C, C++, Rust, Go, Fortran
+
+**Support Level**: ✅ **Full Support** (Primary target)
+
+**Characteristics**:
+- Compiled directly to machine code
+- Functions exist as native symbols in ELF binaries
+- Direct memory addressing and calling conventions
+
+**Hook Mechanism**:
+- **C/C++/Rust**: Direct uprobe attachment to function symbols
+  ```yaml
+  functionHook:
+    function: "malloc"           # C standard library
+    library: "libc.so.6"
+  ```
+
+- **Go Applications**: 
+  - Requires special considerations due to Go runtime
+  - Functions may be inlined or optimized away
+  - Need to build with symbols: `go build -ldflags="-compressdwarf=false"`
+  - Stack management differs from C calling convention
+  
+  ```yaml
+  functionHook:
+    function: "main.ProcessRequest"  # Go package.Function format
+    binary: "/app/myservice"
+    # Note: May need to disable inlining for reliable hooking
+  ```
+
+**Implementation Details**:
+
+```go
+// Go-specific hook validation
+func validateGoHook(spec *FunctionHookSpec) error {
+    // Check if function name follows Go naming convention
+    if strings.Contains(spec.Function, ".") {
+        // Valid Go function: package.Function
+        return nil
+    }
+    return fmt.Errorf("Go functions should be specified as 'package.Function'")
+}
+```
+
+**Limitations**:
+- **Go**: Inlined functions cannot be hooked (need to disable optimization)
+- **Rust**: Mangled names require demangling (use `rustfilt`)
+- **C++**: Template functions create multiple symbols
+
+**References**:
+- [Go Symbol Table](https://golang.org/pkg/debug/gosym/)
+- [Rust Name Mangling](https://rust-lang.github.io/rfcs/2603-rust-symbol-name-mangling-v0.html)
+
+##### 2. JIT-Compiled Languages (Virtual Machines)
+
+**Languages**: Java (JVM), C# (.NET/Mono), JavaScript (V8/Node.js)
+
+**Support Level**: ⚠️ **Partial Support** (Requires VM-specific adapters)
+
+**Characteristics**:
+- Code compiled at runtime to native code
+- No static symbols in the binary
+- VM manages code execution and memory
+
+**Java/JVM Applications**:
+
+**Approach 1: Hook JNI/Native Methods**
+```yaml
+# Hook native library calls from JVM
+functionHook:
+  function: "Java_com_example_NativeLib_processData"
+  library: "libnative.so"
+  action: fail
+```
+
+**Approach 2: Hook JVM Internal Functions**
+```yaml
+# Hook JVM memory allocation
+functionHook:
+  function: "JVM_AllocateNewArray"
+  library: "libjvm.so"
+  action: fail
+  probability: 10
+```
+
+**Approach 3: JVMTI Integration** (Future Enhancement)
+- Use JVM Tool Interface for method-level hooking
+- Requires Java agent deployment
+- More reliable than uprobe for Java methods
+
+```yaml
+# Future: Java-specific chaos type
+apiVersion: chaos-mesh.org/v1alpha1
+kind: JVMChaos  # Already exists in Chaos Mesh
+metadata:
+  name: java-method-failure
+spec:
+  action: exception
+  class: "com.example.PaymentService"
+  method: "processPayment"
+```
+
+**Node.js/V8 Applications**:
+
+**Approach 1: Hook V8 Native Calls**
+```yaml
+functionHook:
+  function: "v8::internal::Runtime_AllocateInYoungGeneration"
+  binary: "/usr/bin/node"
+  action: fail
+```
+
+**Approach 2: Hook Node.js C++ Addons**
+```yaml
+functionHook:
+  function: "_ZN4node6crypto10Initialize*"  # Node.js crypto module
+  binary: "/usr/bin/node"
+  action: delay
+  delayMs: 1000
+```
+
+**Limitations**:
+- JIT-compiled code addresses change at runtime
+- Method names may not be in symbol table
+- VM optimizations can bypass hooks
+
+**Recommendation**: For JVM and .NET, use existing JVMChaos or create dedicated chaos types that integrate with VM profiling APIs.
+
+##### 3. Interpreted Languages
+
+**Languages**: Python, Ruby, Perl, Lua
+
+**Support Level**: ⚠️ **Limited Support** (Hook interpreter native calls)
+
+**Characteristics**:
+- No native compilation of user code
+- Executed by an interpreter runtime
+- User functions exist only in interpreter's memory
+
+**Strategy**: Hook the interpreter's native implementation
+
+**Python Applications**:
+
+**Approach 1: Hook CPython Native Modules**
+```yaml
+# Hook Python's C API for file operations
+functionHook:
+  function: "PyFile_OpenCode"
+  library: "libpython3.11.so"
+  action: fail
+  probability: 15
+```
+
+**Approach 2: Hook Python Standard Library Native Extensions**
+```yaml
+# Hook native JSON parsing
+functionHook:
+  function: "PyInit__json"
+  library: "_json.cpython-311-x86_64-linux-gnu.so"
+  action: delay
+  delayMs: 500
+```
+
+**Approach 3: Hook System Calls from Python**
+```yaml
+# Hook libc calls made by Python interpreter
+functionHook:
+  function: "fopen"
+  library: "libc.so.6"
+  # This affects ALL fopen calls, including Python's
+  filter:
+    # Filter to only affect calls from Python process
+    callStack:
+      - "PyRun_FileExFlags"
+```
+
+**Ruby Applications**:
+
+```yaml
+# Hook Ruby's native extension loader
+functionHook:
+  function: "rb_require_extension"
+  library: "libruby.so.3.0"
+  action: fail
+```
+
+**Limitations**:
+- Cannot directly hook interpreted Python/Ruby functions
+- Can only hook interpreter's C implementation
+- Less granular control over specific user code paths
+
+**Workaround**: Use LD_PRELOAD for interpreted language applications (outside bpftime scope)
+
+**Future Enhancement**: Interpreter-specific integration
+```python
+# Hypothetical: Python-specific hook via sys.settrace
+# Would require custom Python agent, not bpftime-based
+import chaos_mesh_agent
+
+@chaos_mesh_agent.inject_fault(probability=0.1)
+def my_function():
+    # Fault can be injected here
+    pass
+```
+
+##### 4. Bytecode VM Languages
+
+**Languages**: Erlang/Elixir (BEAM), Lua (with LuaJIT)
+
+**Support Level**: ⚠️ **Limited Support** (Hook VM runtime)
+
+**BEAM VM (Erlang/Elixir)**:
+
+```yaml
+# Hook BEAM VM memory allocation
+functionHook:
+  function: "erts_alloc"
+  binary: "/usr/lib/erlang/erts-12.0/bin/beam.smp"
+  action: fail
+  probability: 5
+```
+
+**LuaJIT**:
+
+```yaml
+# Hook LuaJIT FFI calls
+functionHook:
+  function: "lj_cf_ffi_callback"
+  library: "libluajit-5.1.so.2"
+  action: delay
+  delayMs: 100
+```
+
+#### Language-Specific Adaptation Matrix
+
+| Language | Support Level | Hook Target | Adapter Needed | Example Function | Reference |
+|----------|--------------|-------------|----------------|------------------|-----------|
+| **C** | ✅ Full | Native functions | No | `malloc`, `fopen` | [C std lib](https://en.cppreference.com/w/c) |
+| **C++** | ✅ Full | Native functions | Name demangling | `std::string::append` | [Itanium ABI](https://itanium-cxx-abi.github.io/cxx-abi/abi.html#mangling) |
+| **Rust** | ✅ Full | Native functions | Name demangling | `alloc::vec::Vec::push` | [Rust ABI](https://rust-lang.github.io/rfcs/2603-rust-symbol-name-mangling-v0.html) |
+| **Go** | ✅ Full | Native functions | Symbol detection | `main.ProcessRequest` | [Go internals](https://github.com/golang/go/wiki/CompilerOptimizations) |
+| **Java** | ⚠️ Partial | JVM internals / JNI | JVMTI preferred | `JVM_AllocateNewArray` | [JVMTI](https://docs.oracle.com/javase/8/docs/platform/jvmti/jvmti.html) |
+| **C#/.NET** | ⚠️ Partial | CLR internals | CoreCLR profiler | `coreclr!GCHeap::Alloc` | [.NET Profiling](https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/profiling/) |
+| **Node.js** | ⚠️ Partial | V8 internals | V8 inspector | `v8::internal::Runtime_*` | [V8 Embedder's Guide](https://v8.dev/docs/embed) |
+| **Python** | ⚠️ Limited | CPython C API | sys.settrace preferred | `PyFile_OpenCode` | [Python C API](https://docs.python.org/3/c-api/) |
+| **Ruby** | ⚠️ Limited | Ruby C API | TracePoint preferred | `rb_require_extension` | [Ruby C API](https://silverhammermba.github.io/emberb/) |
+| **Erlang** | ⚠️ Limited | BEAM VM | BEAM tracing | `erts_alloc` | [BEAM Book](https://blog.stenmans.org/theBeamBook/) |
+| **Lua** | ⚠️ Limited | Lua C API | Debug hooks | `luaL_loadfile` | [Lua C API](https://www.lua.org/manual/5.4/manual.html#4) |
+
+#### Recommended Approaches by Language Type
+
+**For Production Use**:
+
+1. **Compiled Languages (C/C++/Rust/Go)**: 
+   - ✅ Use UserspaceChaos with bpftime (this RFC)
+   - Best support, lowest overhead, most reliable
+
+2. **JVM Applications**:
+   - ✅ Use existing [JVMChaos](https://chaos-mesh.org/docs/simulate-jvm-application-chaos/) in Chaos Mesh
+   - Provides Java-specific fault injection via bytecode instrumentation
+   - More suitable than userspace hooking
+
+3. **Node.js Applications**:
+   - ⚠️ Use UserspaceChaos to hook V8 internals (limited scenarios)
+   - Better: Use application-level chaos libraries like [node-chaos-monkey](https://github.com/diegofernandes/node-chaos-monkey)
+
+4. **Python Applications**:
+   - ⚠️ Hook CPython native modules (very limited)
+   - Better: Use Python chaos libraries or LD_PRELOAD for system calls
+   - Future: Dedicated PythonChaos type with sys.settrace integration
+
+5. **.NET Applications**:
+   - ⚠️ Hook CoreCLR internals (complex)
+   - Better: Wait for dedicated .NETChaos type with profiling API integration
+
+#### Implementation Recommendations
+
+**Phase 1 (Current RFC Scope)**:
+- ✅ Full support for C/C++/Rust/Go applications
+- ✅ Document JVM/Node.js/Python limitations
+- ✅ Provide examples for native library hooking
+
+**Phase 2 (Future Enhancements)**:
+- Develop language-specific adapters for JVM (integrate with JVMChaos)
+- Create .NETChaos for C# applications using profiling APIs
+- Develop PythonChaos using sys.settrace mechanism
+
+**Phase 3 (Advanced)**:
+- Generic VM integration framework
+- Plugin architecture for custom language support
+- Automatic language detection and adapter selection
+
+#### Code Example: Language Detection
+
+```go
+// Automatically detect application language and suggest appropriate chaos type
+func detectApplicationLanguage(binary string) (string, error) {
+    // Check ELF headers and interpreter
+    f, err := elf.Open(binary)
+    if err != nil {
+        return "", err
+    }
+    defer f.Close()
+    
+    // Check for language-specific sections
+    for _, section := range f.Sections {
+        switch section.Name {
+        case ".go.buildinfo":
+            return "go", nil
+        case ".rustc":
+            return "rust", nil
+        }
+    }
+    
+    // Check interpreter
+    if interp, err := f.INTERP(); err == nil {
+        if strings.Contains(interp, "python") {
+            return "python", nil
+        }
+    }
+    
+    // Check dynamic libraries
+    libs, _ := f.ImportedLibraries()
+    for _, lib := range libs {
+        if strings.Contains(lib, "libjvm") {
+            return "java", nil
+        }
+        if strings.Contains(lib, "libpython") {
+            return "python", nil
+        }
+        if strings.Contains(lib, "libnode") {
+            return "nodejs", nil
+        }
+    }
+    
+    return "native", nil  // C/C++
+}
+
+// Validate language compatibility
+func validateLanguageSupport(lang string, spec *UserspaceChaosSpec) error {
+    switch lang {
+    case "go", "rust", "native":
+        return nil  // Full support
+    case "java":
+        return fmt.Errorf("for Java applications, use JVMChaos instead of UserspaceChaos for better reliability")
+    case "python":
+        if spec.FunctionHook.Library == "" {
+            return fmt.Errorf("Python applications: must hook interpreter libraries (libpython*.so) or native extensions")
+        }
+        return nil
+    default:
+        return fmt.Errorf("language %s has limited support, proceed with caution", lang)
+    }
+}
+```
+
+#### Documentation and User Guidance
+
+**Webhook Validation Messages**:
+
+```go
+func (w *UserspaceChaosWebhook) ValidateCreate(obj runtime.Object) error {
+    chaos := obj.(*UserspaceChaos)
+    
+    // Detect language
+    lang, _ := detectApplicationLanguage(chaos.Spec.Binary)
+    
+    // Provide helpful guidance
+    switch lang {
+    case "java":
+        return admission.Warned(
+            "UserspaceChaos has limited support for Java. " +
+            "Consider using JVMChaos for better Java application fault injection. " +
+            "See: https://chaos-mesh.org/docs/simulate-jvm-application-chaos/",
+        )
+    case "python":
+        return admission.Warned(
+            "UserspaceChaos for Python has limited support. " +
+            "Can only hook interpreter's native libraries (libpython, C extensions). " +
+            "Cannot hook pure Python functions directly.",
+        )
+    }
+    
+    return nil
+}
+```
+
+This multi-language support strategy ensures users understand the capabilities and limitations for their specific application stack, guiding them to the most appropriate chaos engineering solution.
+
 ### Implementation Plan
 
 #### Phase 1: Core Infrastructure (Weeks 1-3)
@@ -1116,9 +1513,10 @@ func (webhook *UserspaceChaosWebhook) ValidateCreate(obj runtime.Object) error {
 ### Limitations and Trade-offs
 
 1. **Language Support**
-   - Best support for C/C++ applications
-   - Limited for interpreted languages (Python, Ruby)
-   - Go support depends on symbol availability (may need -ldflags for symbols)
+   - Best support for compiled languages (C, C++, Rust, Go)
+   - Limited support for interpreted languages (Python, Ruby) - can only hook interpreter internals
+   - Partial support for VM-based languages (Java, .NET, Node.js) - recommend using language-specific chaos types
+   - See detailed [Multi-Language Support Considerations](#multi-language-support-considerations) section above
 
 2. **Container Compatibility**
    - Requires process namespace access
@@ -1187,12 +1585,36 @@ func (webhook *UserspaceChaosWebhook) ValidateCreate(obj runtime.Object) error {
    - Distributed tracing integration
    - Fault injection visualization
 
-3. **Multi-Language Support**
-   - Better support for Go applications
-   - JVM integration via JVMTI
-   - Python/Node.js native module hooking
+3. **Enhanced Multi-Language Support**
+   - **Go Applications**: 
+     - Automatic detection and handling of inlined functions
+     - Better support for goroutine-specific fault injection
+     - Integration with Go runtime internals
+   
+   - **JVM Integration**:
+     - Seamless integration with existing JVMChaos
+     - Unified API for both bytecode and native method injection
+     - Support for Kotlin, Scala, and other JVM languages
+   
+   - **Python/Node.js Adapters**:
+     - Dedicated chaos types using language-specific profiling APIs
+     - PythonChaos using sys.settrace for function-level hooks
+     - Node.jsChaos using V8 inspector protocol
+   
+   - **.NET/CoreCLR Support**:
+     - .NETChaos using profiling API
+     - Support for C#, F#, and other CLR languages
+   
+   - **WebAssembly (WASM)**:
+     - Hook WASM runtime functions
+     - Support for WASM-based applications
 
-4. **Intelligent Fault Generation**
+4. **Language Detection and Auto-configuration**
+   - Automatic application language detection
+   - Smart recommendations for appropriate chaos type
+   - Pre-configured templates per language ecosystem
+
+5. **Intelligent Fault Generation**
    - ML-based fault scenario generation
    - Automatic discovery of critical functions
    - Coverage-guided fault injection
@@ -1257,6 +1679,16 @@ func (webhook *UserspaceChaosWebhook) ValidateCreate(obj runtime.Object) error {
    - [Kubernetes CRD Documentation](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/) - Custom Resource Definitions
    - [Container Runtime Interface](https://github.com/kubernetes/cri-api) - CRI specification
    - [Linux Namespaces](https://man7.org/linux/man-pages/man7/namespaces.7.html) - Process isolation mechanisms
+
+10. **Language Runtime and VM Documentation**
+   - [JVM Tool Interface (JVMTI)](https://docs.oracle.com/javase/8/docs/platform/jvmti/jvmti.html) - Java VM instrumentation
+   - [.NET Profiling API](https://docs.microsoft.com/en-us/dotnet/framework/unmanaged-api/profiling/) - CLR profiling interfaces
+   - [Python C API Reference](https://docs.python.org/3/c-api/) - CPython implementation details
+   - [V8 Embedder's Guide](https://v8.dev/docs/embed) - Node.js V8 engine internals
+   - [Go Internal ABI](https://github.com/golang/go/blob/master/src/cmd/compile/abi-internal.md) - Go calling conventions
+   - [Rust FFI](https://doc.rust-lang.org/nomicon/ffi.html) - Foreign function interface
+   - [Ruby C Extension Guide](https://silverhammermba.github.io/emberb/) - Ruby native extensions
+   - [Itanium C++ ABI](https://itanium-cxx-abi.github.io/cxx-abi/abi.html) - C++ name mangling and ABI
 
 ## Conclusion
 

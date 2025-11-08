@@ -144,6 +144,49 @@ spec:
 - 测试依赖随机性的代码
 - 验证洗牌/选择算法
 
+### 多语言支持
+
+RFC 详细分析了不同语言类型的支持策略：
+
+#### 语言支持分类
+
+1. **编译型语言（原生二进制）** - ✅ **完全支持**
+   - C, C++, Rust, Go
+   - 直接钩取原生函数符号
+   - 最佳性能，最可靠
+
+2. **虚拟机语言（JIT 编译）** - ⚠️ **部分支持**
+   - Java (JVM): 推荐使用现有的 JVMChaos
+   - C# (.NET): 需要 CLR profiler 适配器
+   - Node.js (V8): 可钩取 V8 内部函数，但受限
+   - 建议：使用专门的语言特定混沌类型
+
+3. **解释型语言** - ⚠️ **有限支持**
+   - Python: 只能钩取 CPython C API 和原生扩展
+   - Ruby: 只能钩取 Ruby C API
+   - 无法直接钩取纯 Python/Ruby 函数
+
+#### 语言支持矩阵
+
+| 语言 | 支持级别 | Hook 目标 | 示例函数 |
+|------|---------|-----------|---------|
+| C/C++ | ✅ 完全 | 原生函数 | `malloc`, `fopen` |
+| Rust | ✅ 完全 | 原生函数 | `alloc::vec::Vec::push` |
+| Go | ✅ 完全 | 原生函数 | `main.ProcessRequest` |
+| Java | ⚠️ 部分 | JVM 内部/JNI | 使用 JVMChaos 更好 |
+| Node.js | ⚠️ 部分 | V8 内部 | `v8::internal::Runtime_*` |
+| Python | ⚠️ 有限 | CPython C API | `PyFile_OpenCode` |
+| C#/.NET | ⚠️ 部分 | CLR 内部 | 需要 profiler API |
+
+#### 推荐方法
+
+- **编译型语言**: 使用 UserspaceChaos（本 RFC）
+- **JVM 应用**: 使用 [JVMChaos](https://chaos-mesh.org/docs/simulate-jvm-application-chaos/)
+- **Python/Node.js**: 钩取解释器原生库（有限）或使用应用级混沌库
+- **.NET**: 等待专用 .NETChaos 类型（未来增强）
+
+详见英文完整版的 "Multi-Language Support Considerations" 章节。
+
 ## 技术优势
 
 ### 相比现有方案的优势
