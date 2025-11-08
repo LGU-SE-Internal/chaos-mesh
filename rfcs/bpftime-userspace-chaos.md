@@ -58,6 +58,177 @@ Based on the [bpftime documentation](https://github.com/eunomia-bpf/bpftime) and
    - Ring buffer for event streaming
    - Perf event arrays for metrics collection
 
+#### Critical eBPF Primitives for Fault Injection
+
+bpftime provides three fundamental primitives that make sophisticated fault injection possible in userspace:
+
+##### Primitive 1: bpf_override_return - Authoritative Return Value Override
+
+`bpf_override_return` is an eBPF helper function that, when called by an eBPF program (e.g., in a uprobe), **immediately interrupts the execution of the currently hooked function**. The original function body will not execute at all. Instead, bpftime manipulates the CPU's register state (specifically the program counter and return value register), forcing the function to immediately return a new value specified by the eBPF program.
+
+**Key Technical Details:**
+- bpftime's documentation and examples explicitly confirm support for this capability as the core mechanism for "Error Injections"
+- This contrasts sharply with kernel eBPF:
+  - Kernel uprobe does NOT support `bpf_override_return`
+  - Kernel kprobe only supports it when:
+    - Kernel compiled with `CONFIG_BPF_KPROBE_OVERRIDE` enabled
+    - Target kernel function explicitly marked with `ALLOW_ERROR_INJECTION`
+    - These conditions are rarely met simultaneously in mainstream distribution kernels
+- bpftime completely removes these limitations for any userspace function
+
+**Practical Applications:**
+```c
+// Force malloc to return NULL, simulating memory allocation failure
+SEC("uprobe/malloc")
+int handle_malloc(struct pt_regs *ctx) {
+    if (should_fail()) {
+        bpf_override_return(ctx, 0);  // Return NULL
+    }
+    return 0;
+}
+
+// Force read syscall to fail with I/O error
+SEC("uprobe/read")
+int handle_read(struct pt_regs *ctx) {
+    if (should_fail()) {
+        bpf_override_return(ctx, -1);  // Return -1 (error)
+        // errno set via userspace wrapper
+    }
+    return 0;
+}
+```
+
+This is the most direct and powerful way to simulate various standard library and system call failure conditions.
+
+##### Primitive 2: bpf_probe_write_user - Runtime Semantic Tampering
+
+`bpf_probe_write_user` is another critical eBPF helper function that allows an eBPF program to **write arbitrary data to any user-space memory address** in the process.
+
+**Comparison of Primitives:**
+- `bpf_override_return` is for "injecting errors"
+- `bpf_probe_write_user` is for "tampering with semantics"
+
+This enables eBPF programs to:
+- Modify function input arguments before execution
+- Modify output buffers after function returns
+- Change data structures in-flight
+
+**Critical Technical Detail:**
+`bpf_probe_write_user` can even modify arguments declared as `const char*` in C. The `const` keyword is only a compile-time constraint; it does not provide runtime memory write protection. eBPF programs operate on raw memory addresses, so they can modify these "constant" data, greatly expanding the ability to tamper with standard library API semantics.
+
+**Practical Example:**
+```c
+// Hook openat syscall and redirect file paths
+SEC("uprobe/sys_enter_openat")
+int handle_openat(struct pt_regs *ctx) {
+    // Read pointer to filename argument
+    char *filename_ptr = (char *)PT_REGS_PARM2(ctx);
+    
+    // Read current filename
+    char filename[256];
+    bpf_probe_read_user_str(filename, sizeof(filename), filename_ptr);
+    
+    // Check if it's the target file
+    if (strcmp(filename, "config.json") == 0) {
+        // Overwrite the filename in memory to redirect to /dev/null
+        char new_path[] = "/dev/null";
+        bpf_probe_write_user(filename_ptr, new_path, sizeof(new_path));
+    }
+    
+    return 0;
+}
+```
+
+This allows:
+- Path redirection (opening `/dev/null` instead of `config.json`)
+- Data corruption injection (modifying buffer contents)
+- Configuration tampering (changing runtime parameters)
+
+##### Primitive 3: eBPF Maps - Stateful Complex Scenarios
+
+eBPF programs are not limited to stateless logic. They can use **eBPF Maps** (efficient key-value storage) to save and share state. bpftime implements eBPF Maps support through shared memory.
+
+**Critical Capability:**
+eBPF programs injected into the target process can communicate not only with each other but, more importantly, **with an external control plane** (e.g., a "chaos controller" CLI tool or Chaos Daemon). This is the key to building the "complex scenarios" users expect.
+
+**Stateful Scenario Examples:**
+
+**Example 1: Stateful Failure (Threshold-based)**
+```c
+// BPF_MAP_TYPE_HASH for per-thread counters
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);    // thread ID
+    __type(value, __u32);  // call count
+    __uint(max_entries, 1024);
+} thread_counters SEC(".maps");
+
+SEC("uprobe/malloc")
+int handle_malloc(struct pt_regs *ctx) {
+    __u32 tid = bpf_get_current_pid_tgid() & 0xFFFFFFFF;
+    __u32 *count = bpf_map_lookup_elem(&thread_counters, &tid);
+    
+    if (count) {
+        (*count)++;
+        // Only fail after 100th call in this thread
+        if (*count > 100) {
+            bpf_override_return(ctx, 0);  // Return NULL
+        }
+    } else {
+        __u32 init = 1;
+        bpf_map_update_elem(&thread_counters, &tid, &init, BPF_ANY);
+    }
+    
+    return 0;
+}
+```
+
+**Example 2: Policy-Driven Failure (External Control)**
+```c
+// Configuration map shared with external controller
+struct fault_config {
+    __u32 target_pid;
+    __u32 fail_rate_pct;  // 0-100
+    __u64 enabled;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);
+    __type(value, struct fault_config);
+    __uint(max_entries, 1);
+} config_map SEC(".maps");
+
+SEC("uprobe/read")
+int handle_read(struct pt_regs *ctx) {
+    __u32 key = 0;
+    struct fault_config *cfg = bpf_map_lookup_elem(&config_map, &key);
+    
+    if (!cfg || !cfg->enabled)
+        return 0;
+    
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    if (pid != cfg->target_pid)
+        return 0;
+    
+    // Generate random number 0-99
+    __u32 rand = bpf_get_prandom_u32() % 100;
+    
+    // Fail with configured probability
+    if (rand < cfg->fail_rate_pct) {
+        bpf_override_return(ctx, -EIO);  // Return I/O error
+    }
+    
+    return 0;
+}
+```
+
+**Benefits of eBPF Maps:**
+- Fault injection is no longer static "all-or-nothing"
+- Becomes dynamic, targeted, policy-driven precision control
+- External controller can update policies at runtime
+- Can implement complex patterns (gradual failure, circuit breaker simulation, etc.)
+
 ### Why Chaos Mesh Needs This
 
 Current Chaos Mesh fault injection types (NetworkChaos, IOChaos, etc.) primarily operate at:
@@ -657,6 +828,234 @@ char LICENSE[] SEC("license") = "GPL";
 │  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
+
+#### Injection Architecture: DaemonSet-Based eBPF Program Management
+
+The fault injection system uses a **DaemonSet-based architecture** where Chaos Daemon pods running on each node are responsible for injecting and managing eBPF programs in target containers.
+
+##### Design Rationale
+
+**Why DaemonSet?**
+1. **Node-Local Access**: Each Chaos Daemon has direct access to containers on its node via container runtime
+2. **Namespace Isolation**: Can use `nsenter` to enter target container namespaces
+3. **Efficient Resource Usage**: One daemon per node, not per target pod
+4. **Matches Existing Pattern**: Consistent with Chaos Mesh's current architecture
+
+**Why Not Sidecar Injection?**
+- Requires pod restart (not suitable for chaos testing running apps)
+- Increases resource overhead per pod
+- Complicates deployment of existing workloads
+
+##### eBPF Program Lifecycle Management
+
+The system follows this workflow:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    1. User Creates UserspaceChaos CR             │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│         2. Controller Validates and Selects Target Pods          │
+│            - Resolves pod selectors                              │
+│            - Validates function/library exists                   │
+│            - Generates eBPF program from spec                    │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│    3. Controller Sends Request to Appropriate Daemon (gRPC)      │
+│       Daemon Selection: Based on target pod's node               │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│              4. Chaos Daemon Prepares eBPF Program               │
+│    ┌────────────────────────────────────────────────────┐       │
+│    │  a. Template Selection                              │       │
+│    │     - Choose base template for fault type          │       │
+│    │     - malloc failure, read error, etc.             │       │
+│    │                                                     │       │
+│    │  b. Code Generation                                 │       │
+│    │     - Fill template with user parameters           │       │
+│    │     - Probability, return value, filters           │       │
+│    │     - Generate complete eBPF C code                │       │
+│    │                                                     │       │
+│    │  c. Compilation                                     │       │
+│    │     - Compile to eBPF bytecode (clang/LLVM)        │       │
+│    │     - Verify program safety                        │       │
+│    │     - Cache compiled programs                      │       │
+│    └────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│           5. Daemon Injects bpftime into Target Container        │
+│    ┌────────────────────────────────────────────────────┐       │
+│    │  a. Enter target container namespace               │       │
+│    │     - nsenter -t <pid> -p -m -n -u                 │       │
+│    │                                                     │       │
+│    │  b. Inject bpftime runtime                         │       │
+│    │     - LD_PRELOAD or process injection              │       │
+│    │     - Start bpftime daemon in target namespace     │       │
+│    │                                                     │       │
+│    │  c. Load eBPF program                               │       │
+│    │     - bpftime load <program.o>                     │       │
+│    │     - Verify program loaded successfully           │       │
+│    └────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│               6. bpftime Attaches Hooks to Functions             │
+│    ┌────────────────────────────────────────────────────┐       │
+│    │  a. Symbol Resolution                               │       │
+│    │     - Resolve function address in library/binary   │       │
+│    │     - Parse ELF symbol table                       │       │
+│    │                                                     │       │
+│    │  b. Hook Installation                               │       │
+│    │     - Install inline hooks (Frida Interceptor)     │       │
+│    │     - Set up uprobe/uretprobe points              │       │
+│    │     - Configure eBPF Maps for state sharing        │       │
+│    └────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│           7. Fault Injection Active - Function Calls Hooked      │
+│    ┌────────────────────────────────────────────────────┐       │
+│    │  Application calls malloc()                         │       │
+│    │         ↓                                           │       │
+│    │  bpftime intercepts call                            │       │
+│    │         ↓                                           │       │
+│    │  eBPF program executes                              │       │
+│    │    - Checks probability                            │       │
+│    │    - Applies filters                               │       │
+│    │    - Updates eBPF Maps (statistics)                │       │
+│    │         ↓                                           │       │
+│    │  [Decision: Inject fault or pass through]          │       │
+│    │         ↓                        ↓                  │       │
+│    │  bpf_override_return(0)   Continue to real malloc  │       │
+│    │  (Return NULL)                                      │       │
+│    └────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│         8. Monitoring and Control (via eBPF Maps)                │
+│    - Daemon reads statistics from Maps                           │
+│    - Can update fault policies dynamically                       │
+│    - Provides metrics to Controller                              │
+└──────────────────────────────────────────────────────────────────┘
+                               ↓
+┌──────────────────────────────────────────────────────────────────┐
+│      9. Cleanup on CR Deletion or Duration Expiry                │
+│    - Daemon detaches hooks                                       │
+│    - Unloads eBPF programs                                       │
+│    - Removes bpftime runtime from container                      │
+│    - Target app continues normal operation                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+##### eBPF Program Selection and Control
+
+**Template-Based Approach:**
+
+The system maintains a library of pre-tested eBPF program templates:
+
+```go
+type eBPFTemplate struct {
+    Name        string
+    Description string
+    SourceCode  string  // C template with placeholders
+    Actions     []FaultAction
+}
+
+var templates = map[string]eBPFTemplate{
+    "malloc_failure": {
+        Name: "malloc_failure",
+        Description: "Inject NULL returns from malloc/calloc/realloc",
+        SourceCode: `
+            SEC("uprobe/{{.Function}}")
+            int handle_alloc(struct pt_regs *ctx) {
+                __u32 rand = bpf_get_prandom_u32() % 100;
+                if (rand < {{.Probability}}) {
+                    bpf_override_return(ctx, {{.ReturnValue}});
+                }
+                return 0;
+            }
+        `,
+        Actions: []FaultAction{FaultActionFail},
+    },
+    "io_error": {
+        Name: "io_error",
+        Description: "Inject I/O errors from read/write/open",
+        SourceCode: `
+            SEC("uprobe/{{.Function}}")
+            int handle_io(struct pt_regs *ctx) {
+                // Filter by path if specified
+                {{if .Filter}}
+                char *path_ptr = (char *)PT_REGS_PARM1(ctx);
+                char path[256];
+                bpf_probe_read_user_str(path, sizeof(path), path_ptr);
+                if (!match_filter(path, "{{.Filter.Path}}"))
+                    return 0;
+                {{end}}
+                
+                __u32 rand = bpf_get_prandom_u32() % 100;
+                if (rand < {{.Probability}}) {
+                    bpf_override_return(ctx, {{.ReturnValue}});
+                }
+                return 0;
+            }
+        `,
+        Actions: []FaultAction{FaultActionFail},
+    },
+    // ... more templates
+}
+```
+
+**Dynamic Program Generation:**
+
+```go
+func (d *Daemon) generateeBPFProgram(spec *UserspaceChaosSpec) ([]byte, error) {
+    // 1. Select appropriate template
+    template := selectTemplate(spec.FunctionHook.Function, spec.FunctionHook.Action)
+    
+    // 2. Fill template with user parameters
+    params := map[string]interface{}{
+        "Function":     spec.FunctionHook.Function,
+        "Probability":  spec.FunctionHook.Probability,
+        "ReturnValue":  spec.FunctionHook.ReturnValue,
+        "Filter":       spec.FunctionHook.Filter,
+    }
+    
+    sourceCode := renderTemplate(template.SourceCode, params)
+    
+    // 3. Compile to eBPF bytecode
+    bytecode, err := compileeBPF(sourceCode)
+    if err != nil {
+        return nil, fmt.Errorf("failed to compile eBPF program: %w", err)
+    }
+    
+    // 4. Verify program safety
+    if err := verifyeBPF(bytecode); err != nil {
+        return nil, fmt.Errorf("eBPF program failed verification: %w", err)
+    }
+    
+    return bytecode, nil
+}
+```
+
+**Which eBPF Program to Enable?**
+
+The decision of which eBPF program to load is determined by the UserspaceChaos CR specification:
+
+1. **Function Name + Action** → Selects template
+2. **User Parameters** → Customizes template
+3. **Controller** → Generates and sends compiled program to Daemon
+4. **Daemon** → Loads the specific program for this chaos experiment
+
+Multiple chaos experiments can run simultaneously with different eBPF programs loaded:
+- CR 1: malloc failure in pod A
+- CR 2: read error in pod B  
+- CR 3: pthread failure in pod A (same pod, different function)
+
+Each is managed independently with its own eBPF program instance.
 
 #### API Specification
 
