@@ -25,6 +25,39 @@ eBPF (extended Berkeley Packet Filter) has revolutionized observability and netw
 - **Syscall Interception**: Can intercept and modify system calls
 - **Dynamic Instrumentation**: Attach/detach hooks at runtime without restarting applications
 
+#### bpftime Core Capabilities
+
+Based on the [bpftime documentation](https://github.com/eunomia-bpf/bpftime) and [technical paper](https://arxiv.org/abs/2311.07923), bpftime provides the following capabilities that enable fault injection:
+
+1. **Uprobe/Uretprobe Support** ([source](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md))
+   - Attach to function entry and exit points
+   - Read/modify function arguments and return values
+   - Works with both dynamically linked libraries and static binaries
+   - Supports symbol resolution via ELF symbol tables
+
+2. **Syscall Tracing** ([source](https://github.com/eunomia-bpf/bpftime/blob/main/docs/syscall-tracing.md))
+   - Intercept system calls in userspace
+   - Modify syscall parameters before execution
+   - Override syscall return values
+   - Implemented via binary rewriting of syscall instructions
+
+3. **eBPF Maps** ([source](https://ebpf.io/what-is-ebpf/#maps))
+   - Share state between eBPF programs and userspace
+   - Store configuration (probability, delay values, error codes)
+   - Track injection statistics and metrics
+   - Support hash maps, array maps, and ring buffers
+
+4. **JIT Compilation** ([source](https://github.com/eunomia-bpf/bpftime/blob/main/vm/llvm-jit/README.md))
+   - LLVM-based JIT for optimal performance
+   - Compiles eBPF bytecode to native machine code
+   - Reduces overhead to <5% for most operations
+   - Supports AOT compilation for further optimization
+
+5. **Shared Memory Communication** ([source](https://github.com/eunomia-bpf/bpftime/blob/main/docs/build-and-test.md))
+   - Efficient IPC between injected agent and control plane
+   - Ring buffer for event streaming
+   - Perf event arrays for metrics collection
+
 ### Why Chaos Mesh Needs This
 
 Current Chaos Mesh fault injection types (NetworkChaos, IOChaos, etc.) primarily operate at:
@@ -311,6 +344,274 @@ spec:
     probability: 100
 ```
 
+### How to Find and Specify Hook Points
+
+One of the key challenges in userspace fault injection is identifying the correct hook points. This section details the methodologies and tools for discovering hookable functions.
+
+#### 1. Symbol Discovery Methods
+
+**For Dynamically Linked Libraries:**
+
+```bash
+# List all exported symbols in a library
+nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep " T "
+
+# Example output:
+# 00000000000a2d50 T malloc
+# 00000000000a4820 T free
+# 00000000000a2e30 T calloc
+
+# Use readelf for detailed symbol information
+readelf -s /lib/x86_64-linux-gnu/libc.so.6 | grep FUNC
+
+# Use objdump for symbol addresses
+objdump -T /lib/x86_64-linux-gnu/libc.so.6 | grep malloc
+```
+
+**For Static Binaries:**
+
+```bash
+# List all symbols in a binary (requires symbols not stripped)
+nm /usr/bin/myapp
+
+# For stripped binaries, use dynamic analysis
+gdb /usr/bin/myapp
+(gdb) info functions
+```
+
+**For C++ Applications (Mangled Names):**
+
+```bash
+# C++ function names are mangled - use c++filt to decode
+nm /usr/bin/myapp | c++filt
+
+# Example: _Z15processRequestRKNSt7__cxx1112basic_stringE
+# Becomes: processRequest(std::__cxx11::basic_string const&)
+
+# Find specific functions
+nm /usr/bin/myapp | c++filt | grep "processRequest"
+```
+
+#### 2. Hook Point Specification Format
+
+The `functionHook` configuration uses the following resolution order:
+
+1. **Library Functions** (highest priority if `library` is specified):
+   ```yaml
+   functionHook:
+     function: "malloc"
+     library: "libc.so.6"  # Resolved via /etc/ld.so.cache and dlopen()
+   ```
+   - bpftime searches in standard library paths: `/lib`, `/usr/lib`, `/lib64`, `/usr/lib64`
+   - Uses `dlopen()` to load the library and `dlsym()` to find the symbol
+   - Supports library versioning (e.g., `libc.so.6` vs `libc.so`)
+
+2. **Binary Functions** (if `binary` is specified):
+   ```yaml
+   functionHook:
+     function: "myCustomFunction"
+     binary: "/app/myservice"  # Absolute path within container
+   ```
+   - Resolves symbols from the specified binary's symbol table
+   - Requires the binary to have debug symbols or non-stripped symbols
+   - For position-independent executables (PIE), addresses are rebased at runtime
+
+3. **Main Binary** (if neither `library` nor `binary` is specified):
+   ```yaml
+   functionHook:
+     function: "main"  # Hooks main() of the target process
+   ```
+   - Attaches to the primary executable of the target process
+   - Retrieved via `/proc/<pid>/exe`
+
+#### 3. bpftime Hook Attachment Process
+
+Based on [bpftime's uprobe implementation](https://github.com/eunomia-bpf/bpftime/blob/main/attach/frida_uprobe_attach/src/frida_uprobe_attach.cpp):
+
+```
+1. Symbol Resolution
+   └─> Read ELF headers from target library/binary
+   └─> Parse .dynsym and .symtab sections
+   └─> Find symbol offset from base address
+
+2. Address Calculation
+   └─> Get library base address from /proc/<pid>/maps
+   └─> Calculate absolute address: base_addr + symbol_offset
+
+3. Hook Installation (using Frida)
+   └─> Use Interceptor.attach() at calculated address
+   └─> Install inline hook with trampoline
+   └─> Original instruction bytes saved for restoration
+
+4. eBPF Program Execution
+   └─> On function entry: execute uprobe eBPF program
+   └─> On function exit: execute uretprobe eBPF program
+   └─> eBPF program can modify registers (arguments/return values)
+```
+
+#### 4. Configuration File Design and Interaction Modes
+
+**Full Configuration Schema:**
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: UserspaceChaos
+metadata:
+  name: advanced-fault-injection
+  namespace: chaos-testing
+spec:
+  # Target Selection
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: payment-service
+      tier: backend
+    annotationSelectors:
+      chaos.mesh.org/injectable: "true"
+    podPhaseSelectors:
+      - Running
+  
+  # Container targeting (optional, defaults to all containers)
+  containerNames:
+    - main-app
+  
+  # Execution mode
+  mode: one  # Options: one, all, fixed, fixed-percent, random-max-percent
+  value: "1"  # Number of pods to affect (for fixed mode)
+  
+  # Duration of chaos
+  duration: "5m"
+  
+  # Scheduling (optional)
+  scheduler:
+    cron: "@every 30m"
+  
+  # Function Hook Configuration
+  functionHook:
+    # Target function
+    function: "malloc"
+    library: "libc.so.6"
+    
+    # Hook behavior
+    action: fail  # Options: fail, delay, modifyReturn, modifyArgs
+    
+    # Fault injection parameters
+    probability: 15  # 15% of calls will fail
+    returnValue: "0"  # Return NULL
+    errno: "ENOMEM"  # Set errno to ENOMEM (12)
+    
+    # Advanced filtering
+    filter:
+      # Only inject if malloc size > 1MB
+      arguments:
+        - index: 0  # First argument (size)
+          greaterThan: 1048576
+      
+      # Only inject if called from specific functions
+      callStack:
+        - "largeAllocation"
+        - "bufferResize"
+    
+    # Performance tuning
+    maxEvents: 10000  # Stop after 10k injections
+    cooldown: "1s"    # Minimum time between injections
+  
+  # Status tracking
+  status:
+    conditions: []
+    experiment:
+      desiredPhase: Running
+```
+
+**Interaction Modes:**
+
+1. **Direct Mode** - Immediate effect
+   ```yaml
+   duration: "30s"  # Chaos starts immediately, lasts 30 seconds
+   ```
+
+2. **Scheduled Mode** - Periodic execution
+   ```yaml
+   scheduler:
+     cron: "0 */2 * * *"  # Every 2 hours
+   duration: "5m"
+   ```
+
+3. **Conditional Mode** - Triggered by metrics
+   ```yaml
+   # Future enhancement - trigger based on Prometheus metrics
+   trigger:
+     type: metric
+     metric: "http_requests_per_second > 1000"
+   ```
+
+#### 5. Mapping bpftime Capabilities to Fault Scenarios
+
+| Fault Scenario | bpftime Capability Used | Implementation Method | Reference |
+|---------------|------------------------|---------------------|-----------|
+| Memory Allocation Failures | Uprobe on malloc/calloc | Hook entry, check size, return NULL | [uprobe.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md) |
+| File I/O Failures | Uprobe on fopen/fread | Hook entry, check path filter, return error | [example](https://github.com/eunomia-bpf/bpftime/tree/main/example/malloc) |
+| Network Delays | Uprobe on connect/send | Hook entry, sleep for N ms, continue | [syscall-tracing.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/syscall-tracing.md) |
+| Thread Failures | Uprobe on pthread_create | Hook entry, return EAGAIN with probability | [uprobe.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md) |
+| SSL Failures | Uprobe on SSL_connect | Hook exit, modify return value to -1 | [uretprobe example](https://github.com/eunomia-bpf/bpftime/blob/main/example/uprobe) |
+| Return Value Override | Uretprobe on any function | Hook exit, write to RAX/R0 register | [vm implementation](https://github.com/eunomia-bpf/bpftime/tree/main/vm) |
+| Argument Modification | Uprobe with argument access | Read/write RDI, RSI, RDX registers | [eBPF helpers](https://github.com/eunomia-bpf/bpftime/blob/main/docs/available-features.md) |
+| Call Stack Filtering | eBPF stack unwinding | Use `bpf_get_stackid()` helper | [maps documentation](https://ebpf.io/what-is-ebpf/#maps) |
+
+**Example eBPF Program (pseudocode for malloc failure):**
+
+```c
+// Based on bpftime's eBPF program structure
+// Reference: https://github.com/eunomia-bpf/bpftime/tree/main/example/malloc
+
+#include <bpf/bpf_helpers.h>
+
+// Configuration map (shared with userspace controller)
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, __u32);
+    __type(value, struct fault_config);
+    __uint(max_entries, 1024);
+} config_map SEC(".maps");
+
+struct fault_config {
+    __u32 probability;  // 0-100
+    __u64 min_size;     // Minimum allocation size to affect
+    __u64 return_value; // Value to return (0 for NULL)
+};
+
+SEC("uprobe/malloc")
+int handle_malloc(struct pt_regs *ctx)
+{
+    __u64 size = PT_REGS_PARM1(ctx);  // First parameter
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    
+    struct fault_config *cfg = bpf_map_lookup_elem(&config_map, &pid);
+    if (!cfg)
+        return 0;  // No config, pass through
+    
+    // Filter by size
+    if (size < cfg->min_size)
+        return 0;
+    
+    // Probabilistic injection
+    __u32 rand = bpf_get_prandom_u32() % 100;
+    if (rand >= cfg->probability)
+        return 0;
+    
+    // Override return value (requires uretprobe)
+    bpf_override_return(ctx, cfg->return_value);
+    
+    // Set errno (requires syscall interception)
+    // errno = ENOMEM;  // Implemented in userspace wrapper
+    
+    return 0;
+}
+
+char LICENSE[] SEC("license") = "GPL";
+```
+
 ### Architecture and Design
 
 #### Component Architecture
@@ -452,6 +753,258 @@ type ArgumentFilter struct {
     
     // LessThan for numeric arguments
     LessThan *int64 `json:"lessThan,omitempty"`
+}
+```
+
+### Technical Implementation Details
+
+This section provides detailed technical explanations of how bpftime enables each fault injection scenario, with references to specific bpftime capabilities.
+
+#### Detailed Scenario Implementation
+
+##### 1. Memory Allocation Failures - Technical Flow
+
+**bpftime Capabilities Used:**
+- Uprobe attachment ([uprobe.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md))
+- Uretprobe for return value modification ([example](https://github.com/eunomia-bpf/bpftime/tree/main/example/malloc))
+- eBPF maps for configuration storage
+
+**Implementation Steps:**
+1. Attach uprobe to `malloc` entry point in libc.so.6
+2. eBPF program reads requested size from RDI register (x86_64 calling convention)
+3. Check configuration map for probability and size filters
+4. If fault should be injected:
+   - Skip original malloc call using `bpf_override_return()`
+   - Return NULL (0x0) via RAX register
+   - Set thread-local errno to ENOMEM via syscall interception
+5. If fault not injected, allow original malloc to execute
+
+**Code Flow:**
+```
+User YAML → Controller → Daemon → bpftime
+                                     ↓
+                              Load eBPF program
+                                     ↓
+                              Attach uprobe to malloc
+                                     ↓
+                     malloc() called in app
+                                     ↓
+                     eBPF program executes
+                                     ↓
+              Check probability (using bpf_get_prandom_u32)
+                                     ↓
+                      [Inject fault? Yes/No]
+                                     ↓
+              Yes: Override return → NULL
+              No: Continue to real malloc
+```
+
+##### 2. File I/O Failures - Argument Filtering
+
+**bpftime Capabilities Used:**
+- Uprobe with argument reading ([PT_REGS_PARM macros](https://github.com/eunomia-bpf/bpftime/blob/main/docs/available-features.md))
+- String comparison in eBPF
+- Return value override
+
+**Path Filtering Implementation:**
+```c
+SEC("uprobe/fopen")
+int handle_fopen(struct pt_regs *ctx)
+{
+    // Read first argument (filename pointer)
+    const char *filename = (const char *)PT_REGS_PARM1(ctx);
+    
+    // Read filename into eBPF (max 256 bytes)
+    char path[256];
+    bpf_probe_read_user_str(path, sizeof(path), filename);
+    
+    // Check filter: only affect /data/ paths
+    if (bpf_strstr(path, "/data/") == NULL)
+        return 0;  // No match, pass through
+    
+    // Apply probabilistic fault injection
+    if (should_inject_fault()) {
+        // Override return to NULL (file open failed)
+        bpf_override_return(ctx, 0);
+        // errno set via userspace wrapper
+    }
+    
+    return 0;
+}
+```
+
+**Reference:** [bpf_probe_read_user_str helper](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html)
+
+##### 3. Network Delays - Sleep Injection
+
+**bpftime Capabilities Used:**
+- Uprobe for function entry interception
+- Userspace sleep via eBPF program (using `usleep` syscall wrapper)
+- Minimal overhead via JIT compilation
+
+**Delay Implementation:**
+```c
+SEC("uprobe/connect")
+int handle_connect(struct pt_regs *ctx)
+{
+    struct delay_config *cfg = get_config();
+    if (!cfg || !should_inject_fault())
+        return 0;
+    
+    // Inject delay by calling usleep
+    // bpftime allows eBPF programs to invoke userspace functions
+    usleep(cfg->delay_ms * 1000);
+    
+    // Continue to real connect() call
+    return 0;
+}
+```
+
+**Performance Note:** Based on [bpftime benchmarks](https://github.com/eunomia-bpf/bpftime#performance), uprobe overhead is <5% for most operations, making delay injection accurate.
+
+##### 4. Thread Creation Failures - Error Code Injection
+
+**bpftime Capabilities Used:**
+- Uretprobe for return value modification
+- Return value override via register manipulation
+
+**pthread_create Failure Implementation:**
+```c
+SEC("uretprobe/pthread_create")
+int handle_pthread_create_exit(struct pt_regs *ctx)
+{
+    if (!should_inject_fault())
+        return 0;
+    
+    // Override return value to EAGAIN (11)
+    // RAX register holds return value on x86_64
+    PT_REGS_RC(ctx) = 11;  // EAGAIN
+    
+    // Log the injection for observability
+    struct event e = {
+        .pid = bpf_get_current_pid_tgid(),
+        .timestamp = bpf_ktime_get_ns(),
+        .fault_type = FAULT_PTHREAD_CREATE,
+    };
+    bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &e, sizeof(e));
+    
+    return 0;
+}
+```
+
+##### 5. Call Stack Filtering - Advanced Feature
+
+**bpftime Capabilities Used:**
+- Stack unwinding via `bpf_get_stackid()` ([helper documentation](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html))
+- Stack map storage
+
+**Call Stack Check Implementation:**
+```c
+// Stack trace map
+struct {
+    __uint(type, BPF_MAP_TYPE_STACK_TRACE);
+    __uint(max_entries, 1024);
+} stack_traces SEC(".maps");
+
+SEC("uprobe/malloc")
+int handle_malloc_with_stack_filter(struct pt_regs *ctx)
+{
+    // Get current stack trace
+    int stack_id = bpf_get_stackid(ctx, &stack_traces, BPF_F_USER_STACK);
+    if (stack_id < 0)
+        return 0;
+    
+    // Check if specific function is in call stack
+    // In practice, this requires symbol resolution
+    if (!is_function_in_stack(stack_id, "largeAllocation"))
+        return 0;
+    
+    // Inject fault only if called from largeAllocation()
+    return inject_malloc_failure(ctx);
+}
+```
+
+**Reference:** [bpf_get_stackid documentation](https://github.com/iovisor/bcc/blob/master/docs/reference_guide.md#4-bpf_get_stackid)
+
+#### Integration with Chaos Daemon
+
+**Daemon Component Responsibilities:**
+
+1. **bpftime Runtime Management**
+   - Download and cache bpftime binary
+   - Inject bpftime into target container via nsenter
+   - Manage bpftime process lifecycle
+
+2. **eBPF Program Compilation**
+   - Convert YAML configuration to eBPF C code
+   - Compile using clang/LLVM to eBPF bytecode
+   - Load into bpftime runtime
+
+3. **Hook Lifecycle Management**
+   ```go
+   // Pseudo-code for daemon integration
+   func (d *Daemon) ApplyUserspaceChaos(chaos *UserspaceChaos) error {
+       // 1. Resolve target container PID
+       pid := d.GetContainerPID(chaos.Spec.ContainerName)
+       
+       // 2. Generate eBPF program
+       ebpfProg := d.GenerateEBPFProgram(chaos.Spec.FunctionHook)
+       
+       // 3. Inject bpftime into target namespace
+       bpftimeCmd := fmt.Sprintf(
+           "nsenter -t %d -p -m -- /usr/local/bin/bpftime load %s",
+           pid, ebpfProg,
+       )
+       
+       // 4. Attach hooks
+       err := d.ExecuteInNamespace(pid, bpftimeCmd)
+       if err != nil {
+           return fmt.Errorf("failed to attach hooks: %w", err)
+       }
+       
+       // 5. Monitor hook status
+       d.MonitorHooks(chaos.Name, pid)
+       
+       return nil
+   }
+   ```
+
+**Reference:** Similar to [KernelChaos implementation](https://github.com/chaos-mesh/chaos-mesh/blob/master/controllers/chaosimpl/kernelchaos/types.go)
+
+#### Configuration Validation
+
+**Webhook Validation Rules:**
+
+```go
+// Validation ensures configuration is correct before deployment
+func (webhook *UserspaceChaosWebhook) ValidateCreate(obj runtime.Object) error {
+    chaos := obj.(*UserspaceChaos)
+    
+    // 1. Validate function exists (pre-flight check)
+    if chaos.Spec.FunctionHook.Library != "" {
+        if !isLibraryAvailable(chaos.Spec.FunctionHook.Library) {
+            return fmt.Errorf("library not found: %s", chaos.Spec.FunctionHook.Library)
+        }
+    }
+    
+    // 2. Validate action parameters
+    switch chaos.Spec.FunctionHook.Action {
+    case FaultActionFail, FaultActionModifyReturn:
+        if chaos.Spec.FunctionHook.ReturnValue == "" {
+            return fmt.Errorf("returnValue required for action: %s", chaos.Spec.FunctionHook.Action)
+        }
+    case FaultActionDelay:
+        if chaos.Spec.FunctionHook.DelayMs == 0 {
+            return fmt.Errorf("delayMs required for action: delay")
+        }
+    }
+    
+    // 3. Validate probability range
+    if chaos.Spec.FunctionHook.Probability > 100 {
+        return fmt.Errorf("probability must be 0-100, got: %d", chaos.Spec.FunctionHook.Probability)
+    }
+    
+    return nil
 }
 ```
 
@@ -646,11 +1199,64 @@ type ArgumentFilter struct {
 
 ## References
 
-1. [bpftime GitHub Repository](https://github.com/eunomia-bpf/bpftime)
-2. [eBPF Documentation](https://ebpf.io/)
-3. [Linux Uprobe Documentation](https://www.kernel.org/doc/html/latest/trace/uprobetracer.html)
-4. [Chaos Mesh Documentation](https://chaos-mesh.org/)
-5. [KernelChaos Design](https://chaos-mesh.org/docs/simulate-kernel-chaos/)
+### Primary Sources
+
+1. **bpftime Project**
+   - [bpftime GitHub Repository](https://github.com/eunomia-bpf/bpftime) - Main project repository
+   - [bpftime Technical Paper](https://arxiv.org/abs/2311.07923) - "bpftime: Userspace eBPF Runtime for Fast Uprobes"
+   - [bpftime Documentation](https://github.com/eunomia-bpf/bpftime/tree/main/docs) - Technical documentation and guides
+   - [Uprobe Implementation](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md) - Uprobe/uretprobe support details
+   - [Syscall Tracing Guide](https://github.com/eunomia-bpf/bpftime/blob/main/docs/syscall-tracing.md) - Syscall interception methodology
+
+2. **eBPF Foundation**
+   - [eBPF Official Website](https://ebpf.io/) - What is eBPF and core concepts
+   - [eBPF Documentation](https://ebpf.io/what-is-ebpf/) - Maps, helpers, and program types
+   - [BPF and XDP Reference Guide](https://docs.cilium.io/en/latest/bpf/) - Comprehensive BPF reference
+   - [Linux eBPF Helpers](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html) - Available BPF helper functions
+
+3. **Linux Kernel Documentation**
+   - [Linux Uprobe Documentation](https://www.kernel.org/doc/html/latest/trace/uprobetracer.html) - Kernel uprobe tracing
+   - [Linux Tracing Technologies](https://www.kernel.org/doc/html/latest/trace/ftrace.html) - ftrace and related tracing systems
+   - [BPF Design Q&A](https://www.kernel.org/doc/html/latest/bpf/bpf_design_QA.html) - BPF design decisions
+
+4. **Chaos Mesh Project**
+   - [Chaos Mesh Documentation](https://chaos-mesh.org/) - Official documentation
+   - [KernelChaos Design](https://chaos-mesh.org/docs/simulate-kernel-chaos/) - Existing kernel-level fault injection
+   - [Chaos Mesh Architecture](https://chaos-mesh.org/docs/basic-features/) - System architecture overview
+   - [Development Guide](https://chaos-mesh.org/docs/developer-guide-overview/) - Developer resources
+
+### Implementation Examples
+
+5. **bpftime Examples**
+   - [malloc Hook Example](https://github.com/eunomia-bpf/bpftime/tree/main/example/malloc) - Memory allocation hooking
+   - [Uprobe Examples](https://github.com/eunomia-bpf/bpftime/tree/main/example/uprobe) - Function hooking samples
+   - [Runtime Implementation](https://github.com/eunomia-bpf/bpftime/tree/main/runtime) - Core runtime code
+   - [VM Implementation](https://github.com/eunomia-bpf/bpftime/tree/main/vm) - eBPF virtual machine and JIT
+
+6. **Related Projects and Tools**
+   - [Frida](https://frida.re/) - Dynamic instrumentation toolkit (used by bpftime)
+   - [libbpf](https://github.com/libbpf/libbpf) - eBPF library for Linux
+   - [BCC Tools](https://github.com/iovisor/bcc) - BPF Compiler Collection
+   - [bpftrace](https://github.com/iovisor/bpftrace) - High-level tracing language
+
+### Academic and Technical Papers
+
+7. **Research Papers**
+   - [bpftime: Userspace eBPF Runtime for Fast Uprobes](https://arxiv.org/abs/2311.07923) - Core technical paper
+   - [eBPF: A New Approach to Cloud-Native Observability](https://dl.acm.org/doi/10.1145/3544497.3544498) - eBPF applications
+   - [Chaos Engineering at Scale](https://queue.acm.org/detail.cfm?id=2353017) - Netflix's chaos engineering principles
+
+### Specifications and Standards
+
+8. **ELF and Symbol Format**
+   - [ELF Format Specification](https://refspecs.linuxfoundation.org/elf/elf.pdf) - Executable and Linkable Format
+   - [DWARF Debugging Standard](https://dwarfstd.org/) - Debugging information format
+   - [System V ABI](https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf) - Application Binary Interface for x86_64
+
+9. **Container and Kubernetes**
+   - [Kubernetes CRD Documentation](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/) - Custom Resource Definitions
+   - [Container Runtime Interface](https://github.com/kubernetes/cri-api) - CRI specification
+   - [Linux Namespaces](https://man7.org/linux/man-pages/man7/namespaces.7.html) - Process isolation mechanisms
 
 ## Conclusion
 

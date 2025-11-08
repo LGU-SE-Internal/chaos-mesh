@@ -12,6 +12,86 @@
 
 提议引入新的 CRD `UserspaceChaos`，利用 bpftime 对用户态应用程序进行故障注入。
 
+### bpftime 核心能力
+
+基于 [bpftime 官方文档](https://github.com/eunomia-bpf/bpftime)和[技术论文](https://arxiv.org/abs/2311.07923)，bpftime 提供以下支持故障注入的核心能力：
+
+1. **Uprobe/Uretprobe 支持** - 钩取函数入口和出口点
+2. **系统调用跟踪** - 拦截和修改系统调用
+3. **eBPF Maps** - 在 eBPF 程序和用户态之间共享状态
+4. **JIT 编译** - LLVM 基于的即时编译，性能开销 <5%
+5. **共享内存通信** - 高效的进程间通信
+
+### 如何寻找和指定 Hook 点
+
+RFC 新增了详细的技术指南，说明如何发现可钩取的函数：
+
+#### 符号发现方法
+
+**动态链接库：**
+```bash
+# 列出所有导出符号
+nm -D /lib/x86_64-linux-gnu/libc.so.6 | grep " T "
+
+# 使用 readelf 查看详细符号信息
+readelf -s /lib/x86_64-linux-gnu/libc.so.6 | grep FUNC
+```
+
+**C++ 应用（处理 mangled names）：**
+```bash
+# 使用 c++filt 解码函数名
+nm /usr/bin/myapp | c++filt | grep "processRequest"
+```
+
+#### Hook 点解析顺序
+
+1. **库函数**（最高优先级）：通过 dlopen() 和 dlsym() 解析
+2. **二进制函数**：从指定二进制的符号表解析
+3. **主二进制**：目标进程的主可执行文件
+
+### 配置文件设计
+
+RFC 包含了完整的配置架构设计，包括：
+
+- **目标选择器**：命名空间、标签、注解、Pod 阶段
+- **容器定位**：指定容器名称
+- **执行模式**：one, all, fixed, fixed-percent, random-max-percent
+- **高级过滤**：基于参数值和调用栈的过滤
+- **性能调优**：最大事件数、冷却时间
+
+**完整配置示例：**
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: UserspaceChaos
+metadata:
+  name: advanced-fault-injection
+spec:
+  selector:
+    labelSelectors:
+      app: payment-service
+  mode: one
+  duration: "5m"
+  functionHook:
+    function: "malloc"
+    library: "libc.so.6"
+    action: fail
+    probability: 15
+    returnValue: "0"
+    errno: "ENOMEM"
+    filter:
+      arguments:
+        - index: 0  # 只影响大于 1MB 的分配
+          greaterThan: 1048576
+      callStack:
+        - "largeAllocation"  # 只在特定调用栈中注入
+```
+
+### 交互模式
+
+1. **直接模式** - 立即生效
+2. **定时模式** - 周期性执行（使用 cron）
+3. **条件模式** - 基于指标触发（未来增强）
+
 ### 主要应用场景
 
 本 RFC 提出了 **8 个主要的故障注入场景**：
@@ -19,35 +99,43 @@
 #### 1. 内存分配失败
 - 测试应用程序如何处理 `malloc()` 或 `new` 操作符失败
 - 验证内存耗尽时的优雅降级
-- 测试内存泄漏检测机制
+- **技术实现**：使用 uprobe 钩取 malloc，通过 `bpf_override_return()` 返回 NULL
 
 #### 2. 文件 I/O 函数失败
 - 在 libc 层面模拟文件操作失败
-- 测试 `fopen`、`fread`、`fwrite` 失败的错误处理
-- 模拟磁盘满的情况
+- **技术实现**：uprobe + 参数读取 (`bpf_probe_read_user_str`)，支持路径过滤
 
 #### 3. 网络库函数延迟
 - 向特定网络库调用注入延迟
-- 测试 HTTP 客户端的超时处理
-- 验证 gRPC 连接的重试逻辑
+- **技术实现**：uprobe + userspace sleep，JIT 编译保证低开销
 
 #### 4. 线程和同步失败
 - 通过在 pthread 操作中注入故障来测试并发代码
-- 验证死锁检测机制
-- 测试互斥锁/锁超时处理
+- **技术实现**：uretprobe 修改返回值寄存器（RAX）
 
 #### 5. 自定义应用程序函数钩取
 - 钩取应用程序二进制文件中的特定函数
-- 测试代码中的特定错误路径
-- 模拟第三方 SDK 失败
+- 支持 C++ mangled names
 
 #### 6. SSL/TLS 库失败
 - 向 OpenSSL/TLS 库函数注入故障
 - 测试证书验证错误处理
-- 模拟 SSL 握手失败
 
 #### 7. 数据库客户端库失败
 - 向数据库客户端库注入故障（MySQL、PostgreSQL、Redis 客户端）
+
+#### 8. 随机数生成操作
+- 控制随机性以进行确定性测试
+
+### bpftime 能力与故障场景映射表
+
+| 故障场景 | 使用的 bpftime 能力 | 实现方法 | 参考文档 |
+|---------|-------------------|---------|---------|
+| 内存分配失败 | Uprobe on malloc | Hook 入口，检查大小，返回 NULL | [uprobe.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md) |
+| 文件 I/O 失败 | Uprobe + 参数读取 | Hook 入口，检查路径过滤，返回错误 | [malloc example](https://github.com/eunomia-bpf/bpftime/tree/main/example/malloc) |
+| 网络延迟 | Uprobe + sleep | Hook 入口，sleep N 毫秒，继续 | [syscall-tracing.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/syscall-tracing.md) |
+| 线程失败 | Uretprobe | Hook 出口，修改返回值为 EAGAIN | [uprobe.md](https://github.com/eunomia-bpf/bpftime/blob/main/docs/uprobe.md) |
+| 调用栈过滤 | Stack unwinding | 使用 `bpf_get_stackid()` helper | [eBPF helpers](https://man7.org/linux/man-pages/man7/bpf-helpers.7.html) |
 - 测试连接池耗尽处理
 - 验证查询超时和重试机制
 
