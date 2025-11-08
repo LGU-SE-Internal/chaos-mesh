@@ -23,10 +23,10 @@ The following tables list the configurable parameters of the Chaos Mesh chart an
 | `rbac.create` | Creating rbac API Objects. Also see clusterScoped and controllerManager.serviceAccount | `true` |
 | `timezone` | The timezone where controller-manager, chaos-daemon and dashboard uses. For example: `UTC`, `Asia/Shanghai` | `UTC` |
 | `enableProfiling` | A flag to enable pprof in controller-manager and chaos-daemon | `true` |
-| `enableCtrlServer` | A flag to enable ctrlserver which provides service to chaosctl in controller-manager. | `true` |
 | `images.registry` | The global container registry for the images, you could replace it with your self-hosted container registry. | `ghcr.io` |
 | `images.tag` | The global image tag (for example, semiVer with prefix v, or latest). | `latest` |
 | `imagePullSecrets` | Global Docker registry secret names as an array | [] (does not add image pull secrets to deployed pods) |
+| `extraObjects` | Extra Kubernetes objects to deploy with the helm chart | [] |
 | `controllerManager.securityContext` | Pod securityContext if needed | `{}` |
 | `controllerManager.hostNetwork` | Running chaos-controller-manager on host network | `false` |
 | `controllerManager.allowHostNetworkTesting`   | Allow testing on `hostNetwork` pods | `false` |
@@ -54,6 +54,8 @@ The following tables list the configurable parameters of the Chaos Mesh chart an
 | `controllerManager.leaderElection.renewDeadline` | The duration that the acting control-plane will retry refreshing leadership before giving up. | `10s` |
 | `controllerManager.leaderElection.retryPeriod` | The duration the LeaderElector clients should wait between tries of actions. | `2s` |
 | `controllerManager.chaosdSecurityMode` | Enabled for mTLS connection between chaos-controller-manager and chaosd | `true` |
+| `controllerManager.burst` | Configure client-go burst | `50` |
+| `controllerManager.qps` | Configure client-go qps| `30` |
 | `chaosDaemon.image.registry` | Override global registry, empty value means using the global images.registry | `` |
 | `chaosDaemon.image.repository` | Repository part for image of chaos-daemon | `chaos-mesh/chaos-daemon` |
 | `chaosDaemon.image.tag` | Override global tag, empty value means using the global images.tag | `` |
