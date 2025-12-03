@@ -62,18 +62,6 @@ type EnvoyChaosSpec struct {
 	// +kubebuilder:validation:Enum=fault;delay;abort
 	Action EnvoyChaosAction `json:"action"`
 
-	// Mode defines the mode to run chaos action.
-	// Supported mode: one / all / fixed / fixed-percent / random-max-percent
-	// +kubebuilder:validation:Enum=one;all;fixed;fixed-percent;random-max-percent
-	Mode PodMode `json:"mode"`
-
-	// Value is required when the mode is set to `FixedMode` / `FixedPercentPodMode` / `RandomMaxPercentPodMode`.
-	// If `FixedMode`, provide an integer of pods to do chaos action.
-	// If `FixedPercentPodMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
-	// IF `RandomMaxPercentPodMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
-	// +optional
-	Value string `json:"value,omitempty"`
-
 	// EnvoyConfigName is the name of the CiliumEnvoyConfig or EnvoyFilter to inject faults.
 	// If not provided, will auto-detect the Envoy configuration.
 	// +optional
@@ -98,11 +86,11 @@ type EnvoyChaosSpec struct {
 	Abort *EnvoyAbortConfig `json:"abort,omitempty"`
 
 	// Percentage is the percentage of requests to which the fault will be injected.
-	// Valid range is 0.0 to 100.0
+	// Valid range is 0 to 100
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	Percentage *float64 `json:"percentage,omitempty"`
+	Percentage *int32 `json:"percentage,omitempty"`
 
 	// Path is a rule to select target by uri path in http/grpc request.
 	// Support exact match, prefix match and regex match.
@@ -146,11 +134,11 @@ type EnvoyDelayConfig struct {
 	FixedDelay *string `json:"fixedDelay,omitempty" webhook:"Delay"`
 
 	// Percentage is the percentage of requests to which delay will be injected.
-	// Valid range is 0.0 to 100.0. If not specified, inherits from parent.
+	// Valid range is 0 to 100. If not specified, inherits from parent.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	Percentage *float64 `json:"percentage,omitempty"`
+	Percentage *int32 `json:"percentage,omitempty"`
 }
 
 // EnvoyAbortConfig defines the abort configuration for Envoy fault injection
@@ -166,11 +154,11 @@ type EnvoyAbortConfig struct {
 	GrpcStatus *int32 `json:"grpcStatus,omitempty"`
 
 	// Percentage is the percentage of requests to abort.
-	// Valid range is 0.0 to 100.0. If not specified, inherits from parent.
+	// Valid range is 0 to 100. If not specified, inherits from parent.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
-	Percentage *float64 `json:"percentage,omitempty"`
+	Percentage *int32 `json:"percentage,omitempty"`
 }
 
 type EnvoyChaosStatus struct {

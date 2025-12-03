@@ -458,6 +458,240 @@ spec:
                 - mode
                 - selector
                 type: object
+              envoyChaos:
+                description: EnvoyChaosSpec defines the desired state of EnvoyChaos
+                properties:
+                  abort:
+                    description: Abort represents the abort configuration for fault
+                      injection.
+                    properties:
+                      grpcStatus:
+                        description: |-
+                          GrpcStatus represents the gRPC status code to return when aborting gRPC requests.
+                          If not specified for gRPC, defaults to UNAVAILABLE (14).
+                        format: int32
+                        type: integer
+                      httpStatus:
+                        description: |-
+                          HTTPStatus represents the HTTP status code to return when aborting.
+                          For gRPC, this will be mapped to appropriate gRPC status code.
+                        format: int32
+                        type: integer
+                      percentage:
+                        description: |-
+                          Percentage is the percentage of requests to abort.
+                          Valid range is 0 to 100. If not specified, inherits from parent.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                    type: object
+                  action:
+                    description: |-
+                      Action defines the specific Envoy chaos action.
+                      Supported action: fault, delay, abort
+                      Default action: fault
+                    enum:
+                    - fault
+                    - delay
+                    - abort
+                    type: string
+                  delay:
+                    description: Delay represents the delay configuration for fault
+                      injection.
+                    properties:
+                      fixedDelay:
+                        description: |-
+                          FixedDelay represents the fixed delay duration.
+                          A duration string is a possibly unsigned sequence of
+                          decimal numbers, each with optional fraction and a unit suffix,
+                          such as "300ms", "2h45m".
+                          Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                        type: string
+                      percentage:
+                        description: |-
+                          Percentage is the percentage of requests to which delay will be injected.
+                          Valid range is 0 to 100. If not specified, inherits from parent.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                    type: object
+                  duration:
+                    description: Duration represents the duration of the chaos action.
+                    type: string
+                  envoyConfigName:
+                    description: |-
+                      EnvoyConfigName is the name of the CiliumEnvoyConfig or EnvoyFilter to inject faults.
+                      If not provided, will auto-detect the Envoy configuration.
+                    type: string
+                  envoyConfigNamespace:
+                    description: |-
+                      EnvoyConfigNamespace is the namespace of the CiliumEnvoyConfig or EnvoyFilter.
+                      Defaults to the same namespace as the chaos object.
+                    type: string
+                  headers:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Headers is a rule to select target by headers in request.
+                      The key-value pairs represent header name and header value pairs.
+                    type: object
+                  method:
+                    description: Method is a rule to select target by grpc method
+                      or http method in request.
+                    type: string
+                  mode:
+                    description: |-
+                      Mode defines the mode to run chaos action.
+                      Supported mode: one / all / fixed / fixed-percent / random-max-percent
+                    enum:
+                    - one
+                    - all
+                    - fixed
+                    - fixed-percent
+                    - random-max-percent
+                    type: string
+                  path:
+                    description: |-
+                      Path is a rule to select target by uri path in http/grpc request.
+                      Support exact match, prefix match and regex match.
+                    type: string
+                  percentage:
+                    description: |-
+                      Percentage is the percentage of requests to which the fault will be injected.
+                      Valid range is 0 to 100
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  protocol:
+                    description: Protocol defines the protocol type for fault injection.
+                    enum:
+                    - grpc
+                    - http
+                    type: string
+                  remoteCluster:
+                    description: RemoteCluster represents the remote cluster where
+                      the chaos will be deployed
+                    type: string
+                  selector:
+                    description: Selector is used to select pods that are used to
+                      inject chaos action.
+                    properties:
+                      annotationSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select objects.
+                          A selector based on annotations.
+                        type: object
+                      expressionSelectors:
+                        description: |-
+                          a slice of label selector expressions that can be used to select objects.
+                          A list of selectors based on set-based label expressions.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      fieldSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select objects.
+                          A selector based on fields.
+                        type: object
+                      labelSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select objects.
+                          A selector based on labels.
+                        type: object
+                      namespaces:
+                        description: Namespaces is a set of namespace to which objects
+                          belong.
+                        items:
+                          type: string
+                        type: array
+                      nodeSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select nodes.
+                          Selector which must match a node's labels,
+                          and objects must belong to these selected nodes.
+                        type: object
+                      nodes:
+                        description: Nodes is a set of node name and objects must
+                          belong to these nodes.
+                        items:
+                          type: string
+                        type: array
+                      podPhaseSelectors:
+                        description: |-
+                          PodPhaseSelectors is a set of condition of a pod at the current time.
+                          supported value: Pending / Running / Succeeded / Failed / Unknown
+                        items:
+                          type: string
+                        type: array
+                      pods:
+                        additionalProperties:
+                          items:
+                            type: string
+                          type: array
+                        description: |-
+                          Pods is a map of string keys and a set values that used to select pods.
+                          The key defines the namespace which pods belong,
+                          and the each values is a set of pod names.
+                        type: object
+                    type: object
+                  targetPort:
+                    description: TargetPort specifies the port number of the target
+                      service.
+                    format: int32
+                    type: integer
+                  targetService:
+                    description: TargetService specifies the Kubernetes service to
+                      target for fault injection.
+                    type: string
+                  value:
+                    description: |-
+                      Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
+                      If `FixedMode`, provide an integer of pods to do chaos action.
+                      If `FixedPercentMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+                      IF `RandomMaxPercentMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
+                    type: string
+                required:
+                - action
+                - mode
+                - selector
+                type: object
               gcpChaos:
                 description: GCPChaosSpec is the content of the specification for
                   a GCPChaos
@@ -3843,6 +4077,243 @@ spec:
                           - mode
                           - selector
                           type: object
+                        envoyChaos:
+                          description: EnvoyChaosSpec defines the desired state of
+                            EnvoyChaos
+                          properties:
+                            abort:
+                              description: Abort represents the abort configuration
+                                for fault injection.
+                              properties:
+                                grpcStatus:
+                                  description: |-
+                                    GrpcStatus represents the gRPC status code to return when aborting gRPC requests.
+                                    If not specified for gRPC, defaults to UNAVAILABLE (14).
+                                  format: int32
+                                  type: integer
+                                httpStatus:
+                                  description: |-
+                                    HTTPStatus represents the HTTP status code to return when aborting.
+                                    For gRPC, this will be mapped to appropriate gRPC status code.
+                                  format: int32
+                                  type: integer
+                                percentage:
+                                  description: |-
+                                    Percentage is the percentage of requests to abort.
+                                    Valid range is 0 to 100. If not specified, inherits from parent.
+                                  format: int32
+                                  maximum: 100
+                                  minimum: 0
+                                  type: integer
+                              type: object
+                            action:
+                              description: |-
+                                Action defines the specific Envoy chaos action.
+                                Supported action: fault, delay, abort
+                                Default action: fault
+                              enum:
+                              - fault
+                              - delay
+                              - abort
+                              type: string
+                            delay:
+                              description: Delay represents the delay configuration
+                                for fault injection.
+                              properties:
+                                fixedDelay:
+                                  description: |-
+                                    FixedDelay represents the fixed delay duration.
+                                    A duration string is a possibly unsigned sequence of
+                                    decimal numbers, each with optional fraction and a unit suffix,
+                                    such as "300ms", "2h45m".
+                                    Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                                  type: string
+                                percentage:
+                                  description: |-
+                                    Percentage is the percentage of requests to which delay will be injected.
+                                    Valid range is 0 to 100. If not specified, inherits from parent.
+                                  format: int32
+                                  maximum: 100
+                                  minimum: 0
+                                  type: integer
+                              type: object
+                            duration:
+                              description: Duration represents the duration of the
+                                chaos action.
+                              type: string
+                            envoyConfigName:
+                              description: |-
+                                EnvoyConfigName is the name of the CiliumEnvoyConfig or EnvoyFilter to inject faults.
+                                If not provided, will auto-detect the Envoy configuration.
+                              type: string
+                            envoyConfigNamespace:
+                              description: |-
+                                EnvoyConfigNamespace is the namespace of the CiliumEnvoyConfig or EnvoyFilter.
+                                Defaults to the same namespace as the chaos object.
+                              type: string
+                            headers:
+                              additionalProperties:
+                                type: string
+                              description: |-
+                                Headers is a rule to select target by headers in request.
+                                The key-value pairs represent header name and header value pairs.
+                              type: object
+                            method:
+                              description: Method is a rule to select target by grpc
+                                method or http method in request.
+                              type: string
+                            mode:
+                              description: |-
+                                Mode defines the mode to run chaos action.
+                                Supported mode: one / all / fixed / fixed-percent / random-max-percent
+                              enum:
+                              - one
+                              - all
+                              - fixed
+                              - fixed-percent
+                              - random-max-percent
+                              type: string
+                            path:
+                              description: |-
+                                Path is a rule to select target by uri path in http/grpc request.
+                                Support exact match, prefix match and regex match.
+                              type: string
+                            percentage:
+                              description: |-
+                                Percentage is the percentage of requests to which the fault will be injected.
+                                Valid range is 0 to 100
+                              format: int32
+                              maximum: 100
+                              minimum: 0
+                              type: integer
+                            protocol:
+                              description: Protocol defines the protocol type for
+                                fault injection.
+                              enum:
+                              - grpc
+                              - http
+                              type: string
+                            remoteCluster:
+                              description: RemoteCluster represents the remote cluster
+                                where the chaos will be deployed
+                              type: string
+                            selector:
+                              description: Selector is used to select pods that are
+                                used to inject chaos action.
+                              properties:
+                                annotationSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select objects.
+                                    A selector based on annotations.
+                                  type: object
+                                expressionSelectors:
+                                  description: |-
+                                    a slice of label selector expressions that can be used to select objects.
+                                    A list of selectors based on set-based label expressions.
+                                  items:
+                                    description: |-
+                                      A label selector requirement is a selector that contains values, a key, and an operator that
+                                      relates the key and values.
+                                    properties:
+                                      key:
+                                        description: key is the label key that the
+                                          selector applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          operator represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists and DoesNotExist.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          values is an array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. This array is replaced during a strategic
+                                          merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                fieldSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select objects.
+                                    A selector based on fields.
+                                  type: object
+                                labelSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select objects.
+                                    A selector based on labels.
+                                  type: object
+                                namespaces:
+                                  description: Namespaces is a set of namespace to
+                                    which objects belong.
+                                  items:
+                                    type: string
+                                  type: array
+                                nodeSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select nodes.
+                                    Selector which must match a node's labels,
+                                    and objects must belong to these selected nodes.
+                                  type: object
+                                nodes:
+                                  description: Nodes is a set of node name and objects
+                                    must belong to these nodes.
+                                  items:
+                                    type: string
+                                  type: array
+                                podPhaseSelectors:
+                                  description: |-
+                                    PodPhaseSelectors is a set of condition of a pod at the current time.
+                                    supported value: Pending / Running / Succeeded / Failed / Unknown
+                                  items:
+                                    type: string
+                                  type: array
+                                pods:
+                                  additionalProperties:
+                                    items:
+                                      type: string
+                                    type: array
+                                  description: |-
+                                    Pods is a map of string keys and a set values that used to select pods.
+                                    The key defines the namespace which pods belong,
+                                    and the each values is a set of pod names.
+                                  type: object
+                              type: object
+                            targetPort:
+                              description: TargetPort specifies the port number of
+                                the target service.
+                              format: int32
+                              type: integer
+                            targetService:
+                              description: TargetService specifies the Kubernetes
+                                service to target for fault injection.
+                              type: string
+                            value:
+                              description: |-
+                                Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
+                                If `FixedMode`, provide an integer of pods to do chaos action.
+                                If `FixedPercentMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+                                IF `RandomMaxPercentMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
+                              type: string
+                          required:
+                          - action
+                          - mode
+                          - selector
+                          type: object
                         gcpChaos:
                           description: GCPChaosSpec is the content of the specification
                             for a GCPChaos
@@ -6882,6 +7353,243 @@ spec:
                                         and the each values is a set of pod names.
                                       type: object
                                   type: object
+                                value:
+                                  description: |-
+                                    Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
+                                    If `FixedMode`, provide an integer of pods to do chaos action.
+                                    If `FixedPercentMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+                                    IF `RandomMaxPercentMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
+                                  type: string
+                              required:
+                              - action
+                              - mode
+                              - selector
+                              type: object
+                            envoyChaos:
+                              description: EnvoyChaosSpec defines the desired state
+                                of EnvoyChaos
+                              properties:
+                                abort:
+                                  description: Abort represents the abort configuration
+                                    for fault injection.
+                                  properties:
+                                    grpcStatus:
+                                      description: |-
+                                        GrpcStatus represents the gRPC status code to return when aborting gRPC requests.
+                                        If not specified for gRPC, defaults to UNAVAILABLE (14).
+                                      format: int32
+                                      type: integer
+                                    httpStatus:
+                                      description: |-
+                                        HTTPStatus represents the HTTP status code to return when aborting.
+                                        For gRPC, this will be mapped to appropriate gRPC status code.
+                                      format: int32
+                                      type: integer
+                                    percentage:
+                                      description: |-
+                                        Percentage is the percentage of requests to abort.
+                                        Valid range is 0 to 100. If not specified, inherits from parent.
+                                      format: int32
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
+                                  type: object
+                                action:
+                                  description: |-
+                                    Action defines the specific Envoy chaos action.
+                                    Supported action: fault, delay, abort
+                                    Default action: fault
+                                  enum:
+                                  - fault
+                                  - delay
+                                  - abort
+                                  type: string
+                                delay:
+                                  description: Delay represents the delay configuration
+                                    for fault injection.
+                                  properties:
+                                    fixedDelay:
+                                      description: |-
+                                        FixedDelay represents the fixed delay duration.
+                                        A duration string is a possibly unsigned sequence of
+                                        decimal numbers, each with optional fraction and a unit suffix,
+                                        such as "300ms", "2h45m".
+                                        Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                                      type: string
+                                    percentage:
+                                      description: |-
+                                        Percentage is the percentage of requests to which delay will be injected.
+                                        Valid range is 0 to 100. If not specified, inherits from parent.
+                                      format: int32
+                                      maximum: 100
+                                      minimum: 0
+                                      type: integer
+                                  type: object
+                                duration:
+                                  description: Duration represents the duration of
+                                    the chaos action.
+                                  type: string
+                                envoyConfigName:
+                                  description: |-
+                                    EnvoyConfigName is the name of the CiliumEnvoyConfig or EnvoyFilter to inject faults.
+                                    If not provided, will auto-detect the Envoy configuration.
+                                  type: string
+                                envoyConfigNamespace:
+                                  description: |-
+                                    EnvoyConfigNamespace is the namespace of the CiliumEnvoyConfig or EnvoyFilter.
+                                    Defaults to the same namespace as the chaos object.
+                                  type: string
+                                headers:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Headers is a rule to select target by headers in request.
+                                    The key-value pairs represent header name and header value pairs.
+                                  type: object
+                                method:
+                                  description: Method is a rule to select target by
+                                    grpc method or http method in request.
+                                  type: string
+                                mode:
+                                  description: |-
+                                    Mode defines the mode to run chaos action.
+                                    Supported mode: one / all / fixed / fixed-percent / random-max-percent
+                                  enum:
+                                  - one
+                                  - all
+                                  - fixed
+                                  - fixed-percent
+                                  - random-max-percent
+                                  type: string
+                                path:
+                                  description: |-
+                                    Path is a rule to select target by uri path in http/grpc request.
+                                    Support exact match, prefix match and regex match.
+                                  type: string
+                                percentage:
+                                  description: |-
+                                    Percentage is the percentage of requests to which the fault will be injected.
+                                    Valid range is 0 to 100
+                                  format: int32
+                                  maximum: 100
+                                  minimum: 0
+                                  type: integer
+                                protocol:
+                                  description: Protocol defines the protocol type
+                                    for fault injection.
+                                  enum:
+                                  - grpc
+                                  - http
+                                  type: string
+                                remoteCluster:
+                                  description: RemoteCluster represents the remote
+                                    cluster where the chaos will be deployed
+                                  type: string
+                                selector:
+                                  description: Selector is used to select pods that
+                                    are used to inject chaos action.
+                                  properties:
+                                    annotationSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select objects.
+                                        A selector based on annotations.
+                                      type: object
+                                    expressionSelectors:
+                                      description: |-
+                                        a slice of label selector expressions that can be used to select objects.
+                                        A list of selectors based on set-based label expressions.
+                                      items:
+                                        description: |-
+                                          A label selector requirement is a selector that contains values, a key, and an operator that
+                                          relates the key and values.
+                                        properties:
+                                          key:
+                                            description: key is the label key that
+                                              the selector applies to.
+                                            type: string
+                                          operator:
+                                            description: |-
+                                              operator represents a key's relationship to a set of values.
+                                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                                            type: string
+                                          values:
+                                            description: |-
+                                              values is an array of string values. If the operator is In or NotIn,
+                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                              the values array must be empty. This array is replaced during a strategic
+                                              merge patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    fieldSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select objects.
+                                        A selector based on fields.
+                                      type: object
+                                    labelSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select objects.
+                                        A selector based on labels.
+                                      type: object
+                                    namespaces:
+                                      description: Namespaces is a set of namespace
+                                        to which objects belong.
+                                      items:
+                                        type: string
+                                      type: array
+                                    nodeSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select nodes.
+                                        Selector which must match a node's labels,
+                                        and objects must belong to these selected nodes.
+                                      type: object
+                                    nodes:
+                                      description: Nodes is a set of node name and
+                                        objects must belong to these nodes.
+                                      items:
+                                        type: string
+                                      type: array
+                                    podPhaseSelectors:
+                                      description: |-
+                                        PodPhaseSelectors is a set of condition of a pod at the current time.
+                                        supported value: Pending / Running / Succeeded / Failed / Unknown
+                                      items:
+                                        type: string
+                                      type: array
+                                    pods:
+                                      additionalProperties:
+                                        items:
+                                          type: string
+                                        type: array
+                                      description: |-
+                                        Pods is a map of string keys and a set values that used to select pods.
+                                        The key defines the namespace which pods belong,
+                                        and the each values is a set of pod names.
+                                      type: object
+                                  type: object
+                                targetPort:
+                                  description: TargetPort specifies the port number
+                                    of the target service.
+                                  format: int32
+                                  type: integer
+                                targetService:
+                                  description: TargetService specifies the Kubernetes
+                                    service to target for fault injection.
+                                  type: string
                                 value:
                                   description: |-
                                     Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.

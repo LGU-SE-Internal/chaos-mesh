@@ -58,7 +58,7 @@ spec:
     # 16: UNAUTHENTICATED
     grpcStatus: 14  # UNAVAILABLE
     # Percentage of requests to abort (0-100)
-    percentage: 30.0
+    percentage: 30
   
   # Optional: Target specific gRPC method
   method: "/myservice.MyService/MyMethod"

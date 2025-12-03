@@ -39,13 +39,13 @@ spec:
   # Delay configuration
   delay:
     fixedDelay: "200ms"
-    percentage: 50.0
+    percentage: 50
   
   # Abort configuration
   abort:
     # HTTP status code to return
     httpStatus: 503
-    percentage: 20.0
+    percentage: 20
   
   # Optional: Filter by HTTP path
   path: "/api/v1/*"

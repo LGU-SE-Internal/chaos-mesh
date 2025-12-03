@@ -257,8 +257,8 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 
 		if percentage != nil {
 			delay["percentage"] = map[string]interface{}{
-				"numerator":   int(*percentage * 10000),
-				"denominator": "MILLION",
+				"numerator":   int(*percentage * 100),
+				"denominator": "HUNDRED",
 			}
 		}
 
@@ -283,8 +283,8 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 
 		if percentage != nil {
 			abort["percentage"] = map[string]interface{}{
-				"numerator":   int(*percentage * 10000),
-				"denominator": "MILLION",
+				"numerator":   int(*percentage * 100),
+				"denominator": "HUNDRED",
 			}
 		}
 
