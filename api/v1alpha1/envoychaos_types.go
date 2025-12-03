@@ -104,6 +104,8 @@ type EnvoyChaosSpec struct {
 
 	// Headers is a rule to select target by headers in request.
 	// The key-value pairs represent header name and header value pairs.
+	// Values support exact matching by default. For regex matching, prefix the value with "regex:".
+	// Example: {"x-user-id": "123"} for exact match, {"x-user-id": "regex:^test-.*"} for regex.
 	// +optional
 	Headers map[string]string `json:"headers,omitempty"`
 

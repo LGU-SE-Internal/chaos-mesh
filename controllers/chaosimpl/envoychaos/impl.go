@@ -283,10 +283,12 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 		abort := map[string]interface{}{}
 
 		// Determine the status code to use
+		// For Envoy, grpcStatus can be specified as a string or integer
+		// We use integer format for better compatibility
 		if envoychaos.Spec.Protocol == "grpc" && envoychaos.Spec.Abort.GrpcStatus != nil {
-			abort["grpcStatus"] = fmt.Sprintf("%d", *envoychaos.Spec.Abort.GrpcStatus)
+			abort["grpcStatus"] = int(*envoychaos.Spec.Abort.GrpcStatus)
 		} else if envoychaos.Spec.Abort.HTTPStatus != nil {
-			abort["httpStatus"] = *envoychaos.Spec.Abort.HTTPStatus
+			abort["httpStatus"] = int(*envoychaos.Spec.Abort.HTTPStatus)
 		}
 
 		percentage := envoychaos.Spec.Percentage
@@ -305,13 +307,22 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 	}
 
 	// Add header matching if specified
+	// Headers support exact match by default, or regex if the value starts with "regex:"
 	if len(envoychaos.Spec.Headers) > 0 {
 		headers := []interface{}{}
 		for name, value := range envoychaos.Spec.Headers {
-			headers = append(headers, map[string]interface{}{
+			header := map[string]interface{}{
 				"name": name,
-				"exactMatch": value,
-			})
+			}
+			// Support regex matching if value starts with "regex:"
+			if strings.HasPrefix(value, "regex:") {
+				header["safeRegexMatch"] = map[string]interface{}{
+					"regex": strings.TrimPrefix(value, "regex:"),
+				}
+			} else {
+				header["exactMatch"] = value
+			}
+			headers = append(headers, header)
 		}
 		typedConfig["headers"] = headers
 	}
