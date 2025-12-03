@@ -37,11 +37,8 @@ func (in *EnvoyChaosSpec) Default(root interface{}, _ *reflect.StructField) {
 		in.Action = EnvoyFaultAction
 	}
 
-	// Set default percentage if not specified
-	if in.Percentage == nil {
-		defaultPercentage := int32(100)
-		in.Percentage = &defaultPercentage
-	}
+	// NOTE: Percentage is intentionally not set to a default value
+	// Users should explicitly specify the percentage to avoid unintended widespread impact
 
 	// Set default EnvoyConfigNamespace to current namespace if not specified
 	if in.EnvoyConfigNamespace == "" && root != nil {

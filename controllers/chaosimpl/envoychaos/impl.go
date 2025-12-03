@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"go.uber.org/fx"
@@ -131,6 +132,33 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 	}
 
 	// Create the CiliumEnvoyConfig unstructured object
+	config := impl.buildCiliumEnvoyConfig(configName, configNamespace, pod, envoychaos.Name, faultConfig)
+
+	// Try to create the config
+	err = impl.Client.Create(ctx, config)
+	if err != nil {
+		if k8sError.IsAlreadyExists(err) {
+			// Update if it already exists
+			err = impl.Client.Update(ctx, config)
+			if err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	impl.Log.Info("applied envoy config", "name", configName, "namespace", configNamespace)
+	return nil
+}
+
+// buildCiliumEnvoyConfig constructs the CiliumEnvoyConfig unstructured object
+func (impl *Impl) buildCiliumEnvoyConfig(
+	configName, configNamespace string,
+	pod *v1.Pod,
+	chaosName string,
+	faultConfig map[string]interface{},
+) *unstructured.Unstructured {
 	config := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "cilium.io/v2",
@@ -140,7 +168,7 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 				"namespace": configNamespace,
 				"labels": map[string]interface{}{
 					"chaos-mesh.org/injected": "true",
-					"chaos-mesh.org/chaos":    envoychaos.Name,
+					"chaos-mesh.org/chaos":    chaosName,
 				},
 			},
 			"spec": map[string]interface{}{
@@ -160,7 +188,7 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 									map[string]interface{}{
 										"name": "envoy.filters.network.http_connection_manager",
 										"typedConfig": map[string]interface{}{
-											"@type":     "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
+											"@type":      "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
 											"statPrefix": "chaos_http",
 											"httpFilters": []interface{}{
 												faultConfig,
@@ -186,22 +214,7 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 		Kind:    "CiliumEnvoyConfig",
 	})
 
-	// Try to create the config
-	err = impl.Client.Create(ctx, config)
-	if err != nil {
-		if k8sError.IsAlreadyExists(err) {
-			// Update if it already exists
-			err = impl.Client.Update(ctx, config)
-			if err != nil {
-				return err
-			}
-		} else {
-			return err
-		}
-	}
-
-	impl.Log.Info("applied envoy config", "name", configName, "namespace", configNamespace)
-	return nil
+	return config
 }
 
 // removeEnvoyConfig deletes the CiliumEnvoyConfig for fault injection
@@ -257,7 +270,7 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 
 		if percentage != nil {
 			delay["percentage"] = map[string]interface{}{
-				"numerator":   int(*percentage * 100),
+				"numerator":   int(*percentage),
 				"denominator": "HUNDRED",
 			}
 		}
@@ -283,7 +296,7 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 
 		if percentage != nil {
 			abort["percentage"] = map[string]interface{}{
-				"numerator":   int(*percentage * 100),
+				"numerator":   int(*percentage),
 				"denominator": "HUNDRED",
 			}
 		}
@@ -315,9 +328,11 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 // parsePodId parses the pod namespace and name from the record id
 func parsePodId(id string) (string, string) {
 	// Expected format: "namespace/name"
-	var namespace, name string
-	fmt.Sscanf(id, "%s/%s", &namespace, &name)
-	return namespace, name
+	parts := strings.SplitN(id, "/", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return parts[0], parts[1]
 }
 
 // NewImpl returns a new EnvoyChaos implementation

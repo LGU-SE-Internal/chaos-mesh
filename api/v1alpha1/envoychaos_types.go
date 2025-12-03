@@ -86,7 +86,8 @@ type EnvoyChaosSpec struct {
 	Abort *EnvoyAbortConfig `json:"abort,omitempty"`
 
 	// Percentage is the percentage of requests to which the fault will be injected.
-	// Valid range is 0 to 100
+	// Valid range is 0 to 100 (whole numbers only, e.g., 50 = 50%)
+	// If not specified, fault injection applies to all matching requests
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
@@ -134,7 +135,7 @@ type EnvoyDelayConfig struct {
 	FixedDelay *string `json:"fixedDelay,omitempty" webhook:"Delay"`
 
 	// Percentage is the percentage of requests to which delay will be injected.
-	// Valid range is 0 to 100. If not specified, inherits from parent.
+	// Valid range is 0 to 100 (whole numbers only). If not specified, inherits from parent.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
@@ -154,7 +155,7 @@ type EnvoyAbortConfig struct {
 	GrpcStatus *int32 `json:"grpcStatus,omitempty"`
 
 	// Percentage is the percentage of requests to abort.
-	// Valid range is 0 to 100. If not specified, inherits from parent.
+	// Valid range is 0 to 100 (whole numbers only). If not specified, inherits from parent.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
