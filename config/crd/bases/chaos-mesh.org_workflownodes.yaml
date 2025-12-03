@@ -1570,6 +1570,15 @@ spec:
                     - limit
                     - rate
                     type: object
+                  connectdelay:
+                    description: ConnectDelay represents the detail about connect
+                      delay action
+                    properties:
+                      latency:
+                        type: string
+                    required:
+                    - latency
+                    type: object
                   corrupt:
                     description: Corrupt represents the detail about corrupt action
                     properties:
@@ -4559,6 +4568,15 @@ spec:
                         - buffer
                         - limit
                         - rate
+                        type: object
+                      connectdelay:
+                        description: ConnectDelay represents the detail about connect
+                          delay action
+                        properties:
+                          latency:
+                            type: string
+                        required:
+                        - latency
                         type: object
                       corrupt:
                         description: Corrupt represents the detail about corrupt action
@@ -7989,6 +8007,15 @@ spec:
                                   - limit
                                   - rate
                                   type: object
+                                connectdelay:
+                                  description: ConnectDelay represents the detail
+                                    about connect delay action
+                                  properties:
+                                    latency:
+                                      type: string
+                                  required:
+                                  - latency
+                                  type: object
                                 corrupt:
                                   description: Corrupt represents the detail about
                                     corrupt action
@@ -11086,6 +11113,15 @@ spec:
                                       - buffer
                                       - limit
                                       - rate
+                                      type: object
+                                    connectdelay:
+                                      description: ConnectDelay represents the detail
+                                        about connect delay action
+                                      properties:
+                                        latency:
+                                          type: string
+                                      required:
+                                      - latency
                                       type: object
                                     corrupt:
                                       description: Corrupt represents the detail about
