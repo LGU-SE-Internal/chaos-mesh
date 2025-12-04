@@ -1,5 +1,86 @@
 # EnvoyChaos - Envoy gRPC/HTTP Fault Injection for Chaos Mesh
 
+## ⚠️ Important Notice
+
+**Cilium Envoy Limitation**: Cilium's Envoy proxy is a custom build that does NOT include the HTTP fault filter (see [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)). Therefore, **EnvoyChaos cannot be used directly with Cilium Envoy**.
+
+## Recommended Alternatives
+
+Since Cilium Envoy lacks fault injection support, consider these alternatives:
+
+### Option 1: Use Istio EnvoyFilter (Recommended)
+
+If you have Istio deployed, use native Istio EnvoyFilter for fault injection:
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: fault-injection
+spec:
+  workloadSelector:
+    labels:
+      app: myapp
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.fault
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+          delay:
+            fixed_delay: 5s
+            percentage:
+              numerator: 50
+              denominator: HUNDRED
+```
+
+### Option 2: Use HTTPChaos (Easiest)
+
+Chaos Mesh's HTTPChaos already supports gRPC fault injection without requiring Envoy:
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: grpc-delay
+spec:
+  selector:
+    labelSelectors:
+      app: my-grpc-service
+  mode: all
+  target: Request
+  port: 50051
+  delay: "500ms"
+  duration: "60s"
+```
+
+**Benefits**:
+- No Envoy dependency
+- Uses tproxy technology
+- Supports HTTP/1.1, HTTP/2 (gRPC)
+- Production-tested
+
+### Option 3: Deploy Standalone Envoy
+
+Deploy standard Envoy as a sidecar or DaemonSet:
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: envoy-proxy
+spec:
+  template:
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28-latest
+```
+
 ## Overview
 
 EnvoyChaos enables fault injection for gRPC and HTTP services through Envoy proxy integration. It leverages Envoy's fault filter to inject delays, aborts, and other faults into network traffic managed by Envoy, particularly when deployed with Cilium.
@@ -31,17 +112,21 @@ When an EnvoyChaos resource is created:
 
 ## Prerequisites
 
+### Important: Envoy Compatibility
+
+⚠️ **Cilium Envoy does NOT support fault injection** - The Cilium Envoy proxy is a custom build without the HTTP fault filter. See alternatives above.
+
 ### Envoy Deployment Options
 
-You have several options for using EnvoyChaos:
+EnvoyChaos requires a **full-featured Envoy proxy** with fault filter support:
 
-#### Option 1: Cilium with Envoy (Recommended)
+#### Option 1: Istio (Recommended)
 
-If you're using Cilium as your CNI with Envoy proxy:
+If you're using Istio:
 
-- **No additional installation needed**
-- Cilium includes Envoy proxy for L7 traffic management
-- EnvoyChaos will automatically create CiliumEnvoyConfig resources
+- Istio includes full Envoy as a sidecar proxy
+- EnvoyChaos can integrate via EnvoyFilter resources
+- Set `envoyConfigNamespace` to the appropriate namespace
 
 #### Option 2: Standalone Envoy
 
@@ -51,13 +136,13 @@ If you have Envoy deployed separately:
 - EnvoyChaos can work with custom Envoy deployments
 - May require additional configuration for dynamic updates
 
-#### Option 3: Istio
+#### Option 3: Use HTTPChaos Instead
 
-If you're using Istio:
+For the simplest solution that doesn't require Envoy:
 
-- Istio includes Envoy as a sidecar proxy
-- EnvoyChaos can integrate via EnvoyFilter resources
-- Set `envoyConfigNamespace` to the appropriate namespace
+- Use Chaos Mesh's built-in HTTPChaos
+- Supports gRPC fault injection via tproxy
+- No additional dependencies required
 
 ### Requirements
 
@@ -267,9 +352,35 @@ spec:
     fixedDelay: "500ms"
 ```
 
-## Integration with Cilium
+## ❌ Cilium Envoy Incompatibility
 
-### Cilium Configuration
+⚠️ **IMPORTANT: Cilium Envoy does NOT support fault injection**
+
+### Why EnvoyChaos Doesn't Work with Cilium
+
+Cilium's Envoy proxy is a **custom build** that excludes the HTTP fault filter:
+
+- **Issue**: [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)
+- **Reason**: Cilium Envoy is optimized for L7 visibility and network policy
+- **Impact**: CiliumEnvoyConfig will fail or be ignored for fault injection
+
+### What to Use Instead
+
+Do NOT use the Cilium integration section below. Instead:
+
+1. **HTTPChaos** (Recommended): No Envoy needed, works today
+2. **Istio EnvoyFilter**: If you have Istio deployed  
+3. **Standalone Envoy**: Deploy full Envoy separately
+
+See alternatives at the top of this document.
+
+---
+
+## ~~Integration with Cilium~~ (NOT SUPPORTED)
+
+⚠️ **The following section is DEPRECATED and will not work with Cilium Envoy**
+
+### ~~Cilium Configuration~~
 
 When using Cilium with Envoy, ensure Cilium is configured with L7 proxy support:
 

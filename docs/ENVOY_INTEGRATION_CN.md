@@ -1,12 +1,18 @@
 # Envoy gRPC Fault Integration - 集成说明
 
+## 重要说明 (Important Notice)
+
+⚠️ **Cilium Envoy 限制**: Cilium 的 Envoy proxy 是定制版本，不包含 HTTP fault filter 功能（参见 [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)）。因此 **EnvoyChaos 不能直接与 Cilium Envoy 配合使用**。
+
 ## 问题解答 (Answers to Questions)
 
 ### 1. 是否需要额外安装Envoy组件？
 
-**答：不需要额外安装Envoy组件。**
+**答：取决于您的环境。**
 
-如果您已经在 Cilium 中部署了 Envoy（通过 Cilium Proxy），那么您不需要额外安装任何 Envoy 组件。Chaos Mesh 的 EnvoyChaos 控制器会通过创建 `CiliumEnvoyConfig` CRD 资源来配置已有的 Envoy 代理。
+- **如果使用 Cilium Envoy**：不支持，需要使用其他方案（见下方替代方案）
+- **如果使用 Istio**：不需要额外安装，Istio 的 Envoy sidecar 支持 fault filter
+- **如果没有 Envoy**：需要部署标准 Envoy 或使用 HTTPChaos 替代方案
 
 ### 2. 当前的Chaos Mesh流程是否能集成Envoy？
 
@@ -25,10 +31,94 @@ EnvoyChaos 已经完全集成到 Chaos Mesh 的现有流程中：
 集成方式采用 **声明式 Kubernetes API**：
 
 1. **用户层面**：通过 `kubectl apply -f envoychaos.yaml` 创建 EnvoyChaos 资源
-2. **控制器层面**：EnvoyChaos 控制器自动创建 `CiliumEnvoyConfig` 资源
-3. **Envoy层面**：Cilium 的 Envoy 代理自动应用配置
+2. **控制器层面**：EnvoyChaos 控制器自动创建 `CiliumEnvoyConfig` 或 `EnvoyFilter` 资源
+3. **Envoy层面**：Envoy 代理自动应用配置
 
 **不需要**直接调用 Envoy 的 SDK 或 xDS API。
+
+## 替代方案 (Alternative Solutions)
+
+由于 Cilium Envoy 不支持 fault filter，推荐以下替代方案：
+
+### 方案 1: 使用 Istio EnvoyFilter（推荐）
+
+如果您的集群中已部署 Istio：
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: fault-injection
+spec:
+  workloadSelector:
+    labels:
+      app: myapp
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: SIDECAR_INBOUND
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.fault
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
+          delay:
+            fixed_delay: 5s
+            percentage:
+              numerator: 50
+              denominator: HUNDRED
+```
+
+### 方案 2: 使用 HTTPChaos（最简单）
+
+Chaos Mesh 的 HTTPChaos 已支持 gRPC 故障注入，无需 Envoy：
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: grpc-delay
+spec:
+  selector:
+    labelSelectors:
+      app: my-grpc-service
+  mode: all
+  target: Request
+  port: 50051
+  delay: "500ms"
+  duration: "60s"
+```
+
+**优势**：
+- 不依赖 Envoy
+- 使用 tproxy 技术
+- 支持 HTTP/1.1, HTTP/2 (gRPC)
+- 已在生产环境验证
+
+### 方案 3: 部署独立 Envoy
+
+部署标准 Envoy 作为 sidecar 或 DaemonSet：
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: envoy-proxy
+spec:
+  template:
+    spec:
+      containers:
+      - name: envoy
+        image: envoyproxy/envoy:v1.28-latest
+        # 配置 Envoy 监听和管理端口
+```
+
+## 推荐使用方式 (Recommendations)
+
+1. **已有 Istio**：使用 Istio EnvoyFilter
+2. **没有 Istio**：使用 HTTPChaos（支持 gRPC）
+3. **需要 Envoy 特性**：部署独立 Envoy
 
 ## 架构设计 (Architecture Design)
 
@@ -309,6 +399,33 @@ spec:
    ```bash
    kubectl logs -n chaos-mesh <controller-manager-pod>
    ```
+
+## 已知限制 (Known Limitations)
+
+### Cilium Envoy 不支持
+
+⚠️ **重要**: Cilium 的 Envoy proxy 是定制版本，**不包含 HTTP fault filter 功能**。
+
+**原因**：
+- Cilium Envoy 是为网络层面的 L7 可见性和策略而定制的
+- 移除了许多标准 Envoy 的 HTTP filters 以减小体积
+- 参见 GitHub issue: [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)
+
+**影响**：
+- EnvoyChaos 不能直接与 Cilium Envoy 配合使用
+- 尝试创建 CiliumEnvoyConfig 会失败或被忽略
+
+**解决方案**：
+1. 使用 HTTPChaos（推荐，无需 Envoy）
+2. 部署 Istio 并使用 Istio EnvoyFilter
+3. 部署独立的标准 Envoy
+
+### 其他限制
+
+1. **依赖 Envoy**: 需要完整版 Envoy (非 Cilium 版本)
+2. **配置复杂度**: Envoy 配置较为复杂
+3. **延迟**: 配置更新可能有轻微延迟
+4. **范围限制**: 仅适用于通过 Envoy 代理的流量
 
 ## 参考资料 (References)
 
