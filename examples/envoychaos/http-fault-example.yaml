@@ -19,17 +19,6 @@ metadata:
   name: http-fault-example
   namespace: default
 spec:
-  # Select the target pods
-  selector:
-    namespaces:
-      - default
-    labelSelectors:
-      app: http-service
-  
-  # Mode defines how many pods will be affected
-  mode: fixed
-  value: "2"
-  
   # Protocol type: grpc or http
   protocol: http
   
@@ -46,6 +35,12 @@ spec:
     # HTTP status code to return
     httpStatus: 503
     percentage: 20
+  
+  # Required: Target service for fault injection
+  targetService: my-http-service
+  
+  # Optional: Target specific port
+  targetPort: 8080
   
   # Optional: Filter by HTTP path
   path: "/api/v1/*"

@@ -19,16 +19,6 @@ metadata:
   name: grpc-abort-example
   namespace: default
 spec:
-  # Select the target pods
-  selector:
-    namespaces:
-      - default
-    labelSelectors:
-      app: grpc-service
-  
-  # Mode defines how many pods will be affected
-  mode: all
-  
   # Protocol type: grpc or http
   protocol: grpc
   
@@ -60,8 +50,18 @@ spec:
     # Percentage of requests to abort (0-100)
     percentage: 30
   
+  # Required: Target service for fault injection
+  targetService: my-grpc-service
+  
+  # Optional: Target specific port
+  targetPort: 50051
+  
   # Optional: Target specific gRPC method
   method: "/myservice.MyService/MyMethod"
   
   # Duration of the chaos experiment
   duration: "120s"
+  
+  # Note: EnvoyChaos operates at service level, not pod level.
+  # Simply specify targetService and optionally targetPort.
+

@@ -45,41 +45,37 @@ type Impl struct {
 }
 
 // Apply implements the ChaosImpl interface for EnvoyChaos
+// EnvoyChaos operates at service level, requires targetService to be specified
 func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Record, obj v1alpha1.InnerObject) (v1alpha1.Phase, error) {
 	impl.Log.Info("envoychaos Apply", "namespace", obj.GetNamespace(), "name", obj.GetName())
 
 	envoychaos := obj.(*v1alpha1.EnvoyChaos)
-	if envoychaos.Status.Instances == nil {
-		envoychaos.Status.Instances = make(map[string]int64)
+	
+	// EnvoyChaos works at service level, not pod level
+	// We only need to process once (on first call)
+	if index > 0 {
+		return v1alpha1.Injected, nil
 	}
 
-	record := records[index]
-
-	// Parse the pod information from the record
-	podNamespace, podName := parsePodId(record.Id)
-	if podNamespace == "" || podName == "" {
-		return v1alpha1.NotInjected, fmt.Errorf("invalid pod id: %s", record.Id)
+	// Validate targetService is specified
+	if envoychaos.Spec.TargetService == "" {
+		return v1alpha1.NotInjected, fmt.Errorf("targetService must be specified for EnvoyChaos")
 	}
 
-	// Get the pod
-	var pod v1.Pod
-	err := impl.Client.Get(ctx, types.NamespacedName{Namespace: podNamespace, Name: podName}, &pod)
+	// Determine namespace for the service
+	serviceNamespace := envoychaos.Namespace
+	if envoychaos.Spec.EnvoyConfigNamespace != "" {
+		serviceNamespace = envoychaos.Spec.EnvoyConfigNamespace
+	}
+
+	// Apply the Envoy configuration for the service
+	err := impl.applyEnvoyConfigForService(ctx, envoychaos, serviceNamespace)
 	if err != nil {
-		if k8sError.IsNotFound(err) {
-			return v1alpha1.NotInjected, nil
-		}
+		impl.Log.Error(err, "failed to apply envoy config", "service", envoychaos.Spec.TargetService)
 		return v1alpha1.NotInjected, err
 	}
 
-	// Apply the Envoy configuration
-	err = impl.applyEnvoyConfig(ctx, envoychaos, &pod)
-	if err != nil {
-		impl.Log.Error(err, "failed to apply envoy config", "pod", podName)
-		return v1alpha1.NotInjected, err
-	}
-
-	// Mark as injected
-	envoychaos.Status.Instances[record.Id] = 1
+	impl.Log.Info("applied envoy config", "service", envoychaos.Spec.TargetService, "namespace", serviceNamespace)
 	return v1alpha1.Injected, nil
 }
 
@@ -88,62 +84,53 @@ func (impl *Impl) Recover(ctx context.Context, index int, records []*v1alpha1.Re
 	impl.Log.Info("envoychaos Recover", "namespace", obj.GetNamespace(), "name", obj.GetName())
 
 	envoychaos := obj.(*v1alpha1.EnvoyChaos)
-	if envoychaos.Status.Instances == nil {
-		envoychaos.Status.Instances = make(map[string]int64)
+	
+	// Only need to process once
+	if index > 0 {
+		return v1alpha1.NotInjected, nil
 	}
 
-	record := records[index]
+	// Validate targetService is specified
+	if envoychaos.Spec.TargetService == "" {
+		return v1alpha1.NotInjected, fmt.Errorf("targetService must be specified for EnvoyChaos")
+	}
 
-	// Parse the pod information from the record
-	podNamespace, podName := parsePodId(record.Id)
-	if podNamespace == "" || podName == "" {
-		return v1alpha1.NotInjected, fmt.Errorf("invalid pod id: %s", record.Id)
+	// Determine namespace for the service
+	serviceNamespace := envoychaos.Namespace
+	if envoychaos.Spec.EnvoyConfigNamespace != "" {
+		serviceNamespace = envoychaos.Spec.EnvoyConfigNamespace
 	}
 
 	// Remove the Envoy configuration
-	err := impl.removeEnvoyConfig(ctx, envoychaos, podNamespace, podName)
+	err := impl.removeEnvoyConfig(ctx, envoychaos, serviceNamespace)
 	if err != nil {
 		if k8sError.IsNotFound(err) {
-			delete(envoychaos.Status.Instances, record.Id)
 			return v1alpha1.NotInjected, nil
 		}
-		impl.Log.Error(err, "failed to remove envoy config", "pod", podName)
+		impl.Log.Error(err, "failed to remove envoy config", "service", envoychaos.Spec.TargetService)
 		return v1alpha1.Injected, err
 	}
 
-	// Mark as not injected
-	delete(envoychaos.Status.Instances, record.Id)
+	impl.Log.Info("removed envoy config", "service", envoychaos.Spec.TargetService, "namespace", serviceNamespace)
 	return v1alpha1.NotInjected, nil
 }
 
-// applyEnvoyConfig creates or updates the CiliumEnvoyConfig for fault injection
-func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.EnvoyChaos, pod *v1.Pod) error {
+// applyEnvoyConfigForService creates or updates the CiliumEnvoyConfig for fault injection
+func (impl *Impl) applyEnvoyConfigForService(ctx context.Context, envoychaos *v1alpha1.EnvoyChaos, serviceNamespace string) error {
 	// Generate the Envoy fault filter configuration
 	faultConfig, err := impl.generateFaultConfig(envoychaos)
 	if err != nil {
 		return err
 	}
 
-	// Determine the target service
 	targetService := envoychaos.Spec.TargetService
-	if targetService == "" {
-		// Find service that matches the pod
-		targetService, err = impl.findServiceForPod(ctx, pod)
-		if err != nil {
-			impl.Log.Error(err, "failed to find service for pod", "pod", pod.Name)
-			return err
-		}
-	}
-
+	
 	// Create CiliumEnvoyConfig resource name
-	configName := fmt.Sprintf("chaos-%s-%s", envoychaos.Name, pod.Name)
-	configNamespace := envoychaos.Spec.EnvoyConfigNamespace
-	if configNamespace == "" {
-		configNamespace = envoychaos.Namespace
-	}
+	configName := fmt.Sprintf("chaos-%s", envoychaos.Name)
+	configNamespace := serviceNamespace
 
 	// Create the CiliumEnvoyConfig unstructured object
-	config := impl.buildCiliumEnvoyConfig(configName, configNamespace, pod, targetService, envoychaos.Name, envoychaos.Spec.TargetPort, faultConfig)
+	config := impl.buildCiliumEnvoyConfig(configName, configNamespace, targetService, serviceNamespace, envoychaos.Name, envoychaos.Spec.TargetPort, faultConfig)
 
 	// Try to create the config
 	err = impl.Client.Create(ctx, config)
@@ -166,8 +153,8 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 // buildCiliumEnvoyConfig constructs the CiliumEnvoyConfig unstructured object
 func (impl *Impl) buildCiliumEnvoyConfig(
 	configName, configNamespace string,
-	pod *v1.Pod,
 	serviceName string,
+	serviceNamespace string,
 	chaosName string,
 	targetPort *int32,
 	faultConfig map[string]interface{},
@@ -175,7 +162,7 @@ func (impl *Impl) buildCiliumEnvoyConfig(
 	// Build service reference
 	serviceRef := map[string]interface{}{
 		"name":      serviceName,
-		"namespace": pod.Namespace,
+		"namespace": serviceNamespace,
 	}
 	
 	// Add port if specified
@@ -239,12 +226,9 @@ func (impl *Impl) buildCiliumEnvoyConfig(
 }
 
 // removeEnvoyConfig deletes the CiliumEnvoyConfig for fault injection
-func (impl *Impl) removeEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.EnvoyChaos, podNamespace, podName string) error {
-	configName := fmt.Sprintf("chaos-%s-%s", envoychaos.Name, podName)
-	configNamespace := envoychaos.Spec.EnvoyConfigNamespace
-	if configNamespace == "" {
-		configNamespace = envoychaos.Namespace
-	}
+func (impl *Impl) removeEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.EnvoyChaos, serviceNamespace string) error {
+	configName := fmt.Sprintf("chaos-%s", envoychaos.Name)
+	configNamespace := serviceNamespace
 
 	config := &unstructured.Unstructured{}
 	config.SetGroupVersionKind(schema.GroupVersionKind{
@@ -265,6 +249,7 @@ func (impl *Impl) removeEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.En
 
 	impl.Log.Info("removed envoy config", "name", configName, "namespace", configNamespace)
 	return nil
+}
 }
 
 // generateFaultConfig generates the Envoy fault filter configuration based on the chaos spec
@@ -358,38 +343,6 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 }
 
 // findServiceForPod finds a Kubernetes service that selects the given pod
-func (impl *Impl) findServiceForPod(ctx context.Context, pod *v1.Pod) (string, error) {
-	// List all services in the pod's namespace
-	var serviceList v1.ServiceList
-	err := impl.Client.List(ctx, &serviceList, client.InNamespace(pod.Namespace))
-	if err != nil {
-		return "", fmt.Errorf("failed to list services: %w", err)
-	}
-
-	// Find a service that matches the pod's labels
-	for _, svc := range serviceList.Items {
-		if svc.Spec.Selector == nil {
-			continue
-		}
-
-		// Check if service selector matches pod labels
-		matches := true
-		for key, value := range svc.Spec.Selector {
-			if podValue, ok := pod.Labels[key]; !ok || podValue != value {
-				matches = false
-				break
-			}
-		}
-
-		if matches {
-			impl.Log.Info("found service for pod", "pod", pod.Name, "service", svc.Name)
-			return svc.Name, nil
-		}
-	}
-
-	return "", fmt.Errorf("no service found for pod %s/%s", pod.Namespace, pod.Name)
-}
-
 // parsePodId parses the pod namespace and name from the record id
 func parsePodId(id string) (string, string) {
 	// Expected format: "namespace/name"
