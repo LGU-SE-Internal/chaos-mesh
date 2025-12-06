@@ -258,9 +258,10 @@ spec:
 ```go
 // Apply - 应用混沌
 func (impl *Impl) Apply(ctx context.Context, ...) {
-    // 1. 选择目标 Pod
-    // 2. 生成 Envoy Fault Filter 配置
-    // 3. 创建 CiliumEnvoyConfig 资源
+    // 1. 通过 selector 选择目标 Pod
+    // 2. 查找 Pod 所属的 Service（或使用 targetService 字段）
+    // 3. 生成 Envoy Fault Filter 配置
+    // 4. 创建 CiliumEnvoyConfig 资源，引用正确的 Service
 }
 
 // Recover - 恢复正常
@@ -269,6 +270,11 @@ func (impl *Impl) Recover(ctx context.Context, ...) {
     // 2. 恢复 Envoy 原始配置
 }
 ```
+
+**Service 发现机制**：
+- 如果指定了 `targetService` 字段，直接使用该 Service
+- 如果未指定，控制器会自动查找匹配 Pod 标签的 Service
+- Service 查找基于 Service selector 与 Pod labels 的匹配
 
 #### 3. Envoy Fault Filter 配置生成
 
@@ -293,30 +299,54 @@ func generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) {
 
 #### CiliumEnvoyConfig 资源
 
+控制器自动生成的 CiliumEnvoyConfig 结构：
+
 ```yaml
 apiVersion: cilium.io/v2
 kind: CiliumEnvoyConfig
 metadata:
   name: chaos-{chaos-name}-{pod-name}
   namespace: {namespace}
+  labels:
+    chaos-mesh.org/injected: "true"
+    chaos-mesh.org/chaos: {chaos-name}
 spec:
+  # 引用实际的 Kubernetes Service，而非 Pod
   services:
-  - name: {pod-name}
-    namespace: {pod-namespace}
+  - name: {service-name}  # 通过 targetService 指定或自动发现
+    namespace: {service-namespace}
+    ports: [50051]  # 可选：通过 targetPort 指定
   resources:
   - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
-    name: chaos-listener-{pod-name}
+    name: chaos-listener-{service-name}
     filterChains:
     - filters:
       - name: envoy.filters.network.http_connection_manager
         typedConfig:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          statPrefix: chaos_http
           httpFilters:
           - name: envoy.filters.http.fault
             typedConfig:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.fault.v3.HTTPFault
               # 故障注入配置
-              delay: ...
-              abort: ...
+              delay:
+                fixedDelay: "500ms"
+                percentage:
+                  numerator: 50
+                  denominator: HUNDRED
+              abort:
+                httpStatus: 503
+                percentage:
+                  numerator: 30
+                  denominator: HUNDRED
+          - name: envoy.filters.http.router
 ```
+
+**重要说明**：
+- `services` 字段必须引用实际的 Kubernetes Service，不能是 Pod 名称
+- 如果未指定 `targetService`，控制器会自动查找匹配 Pod 的 Service
+- `ports` 字段可选，用于限制只对特定端口应用故障注入
 
 ## 使用示例 (Usage Examples)
 

@@ -124,6 +124,17 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 		return err
 	}
 
+	// Determine the target service
+	targetService := envoychaos.Spec.TargetService
+	if targetService == "" {
+		// Find service that matches the pod
+		targetService, err = impl.findServiceForPod(ctx, pod)
+		if err != nil {
+			impl.Log.Error(err, "failed to find service for pod", "pod", pod.Name)
+			return err
+		}
+	}
+
 	// Create CiliumEnvoyConfig resource name
 	configName := fmt.Sprintf("chaos-%s-%s", envoychaos.Name, pod.Name)
 	configNamespace := envoychaos.Spec.EnvoyConfigNamespace
@@ -132,7 +143,7 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 	}
 
 	// Create the CiliumEnvoyConfig unstructured object
-	config := impl.buildCiliumEnvoyConfig(configName, configNamespace, pod, envoychaos.Name, faultConfig)
+	config := impl.buildCiliumEnvoyConfig(configName, configNamespace, pod, targetService, envoychaos.Name, envoychaos.Spec.TargetPort, faultConfig)
 
 	// Try to create the config
 	err = impl.Client.Create(ctx, config)
@@ -148,7 +159,7 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 		}
 	}
 
-	impl.Log.Info("applied envoy config", "name", configName, "namespace", configNamespace)
+	impl.Log.Info("applied envoy config", "name", configName, "namespace", configNamespace, "service", targetService)
 	return nil
 }
 
@@ -156,9 +167,22 @@ func (impl *Impl) applyEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.Env
 func (impl *Impl) buildCiliumEnvoyConfig(
 	configName, configNamespace string,
 	pod *v1.Pod,
+	serviceName string,
 	chaosName string,
+	targetPort *int32,
 	faultConfig map[string]interface{},
 ) *unstructured.Unstructured {
+	// Build service reference
+	serviceRef := map[string]interface{}{
+		"name":      serviceName,
+		"namespace": pod.Namespace,
+	}
+	
+	// Add port if specified
+	if targetPort != nil {
+		serviceRef["ports"] = []interface{}{int(*targetPort)}
+	}
+
 	config := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "cilium.io/v2",
@@ -173,15 +197,12 @@ func (impl *Impl) buildCiliumEnvoyConfig(
 			},
 			"spec": map[string]interface{}{
 				"services": []interface{}{
-					map[string]interface{}{
-						"name":      pod.Name,
-						"namespace": pod.Namespace,
-					},
+					serviceRef,
 				},
 				"resources": []interface{}{
 					map[string]interface{}{
 						"@type": "type.googleapis.com/envoy.config.listener.v3.Listener",
-						"name":  fmt.Sprintf("chaos-listener-%s", pod.Name),
+						"name":  fmt.Sprintf("chaos-listener-%s", serviceName),
 						"filterChains": []interface{}{
 							map[string]interface{}{
 								"filters": []interface{}{
@@ -334,6 +355,39 @@ func (impl *Impl) generateFaultConfig(envoychaos *v1alpha1.EnvoyChaos) (map[stri
 
 	impl.Log.V(1).Info("generated fault config", "config", fmt.Sprintf("%+v", faultConfig))
 	return faultConfig, nil
+}
+
+// findServiceForPod finds a Kubernetes service that selects the given pod
+func (impl *Impl) findServiceForPod(ctx context.Context, pod *v1.Pod) (string, error) {
+	// List all services in the pod's namespace
+	var serviceList v1.ServiceList
+	err := impl.Client.List(ctx, &serviceList, client.InNamespace(pod.Namespace))
+	if err != nil {
+		return "", fmt.Errorf("failed to list services: %w", err)
+	}
+
+	// Find a service that matches the pod's labels
+	for _, svc := range serviceList.Items {
+		if svc.Spec.Selector == nil {
+			continue
+		}
+
+		// Check if service selector matches pod labels
+		matches := true
+		for key, value := range svc.Spec.Selector {
+			if podValue, ok := pod.Labels[key]; !ok || podValue != value {
+				matches = false
+				break
+			}
+		}
+
+		if matches {
+			impl.Log.Info("found service for pod", "pod", pod.Name, "service", svc.Name)
+			return svc.Name, nil
+		}
+	}
+
+	return "", fmt.Errorf("no service found for pod %s/%s", pod.Namespace, pod.Name)
 }
 
 // parsePodId parses the pod namespace and name from the record id
