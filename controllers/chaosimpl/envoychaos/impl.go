@@ -64,7 +64,9 @@ func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Reco
 
 	// Determine namespace for the service
 	serviceNamespace := envoychaos.Namespace
-	if envoychaos.Spec.EnvoyConfigNamespace != "" {
+	if envoychaos.Spec.TargetNamespace != "" {
+		serviceNamespace = envoychaos.Spec.TargetNamespace
+	} else if envoychaos.Spec.EnvoyConfigNamespace != "" {
 		serviceNamespace = envoychaos.Spec.EnvoyConfigNamespace
 	}
 
@@ -97,7 +99,9 @@ func (impl *Impl) Recover(ctx context.Context, index int, records []*v1alpha1.Re
 
 	// Determine namespace for the service
 	serviceNamespace := envoychaos.Namespace
-	if envoychaos.Spec.EnvoyConfigNamespace != "" {
+	if envoychaos.Spec.TargetNamespace != "" {
+		serviceNamespace = envoychaos.Spec.TargetNamespace
+	} else if envoychaos.Spec.EnvoyConfigNamespace != "" {
 		serviceNamespace = envoychaos.Spec.EnvoyConfigNamespace
 	}
 
@@ -249,7 +253,6 @@ func (impl *Impl) removeEnvoyConfig(ctx context.Context, envoychaos *v1alpha1.En
 
 	impl.Log.Info("removed envoy config", "name", configName, "namespace", configNamespace)
 	return nil
-}
 }
 
 // generateFaultConfig generates the Envoy fault filter configuration based on the chaos spec

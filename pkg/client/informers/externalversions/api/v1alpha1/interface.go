@@ -28,6 +28,8 @@ type Interface interface {
 	Azurechaos() AzureChaosInformer
 	// Blockchaos returns a BlockChaosInformer.
 	Blockchaos() BlockChaosInformer
+	// EnvoyChaoses returns a EnvoyChaosInformer.
+	EnvoyChaoses() EnvoyChaosInformer
 	// Gcpchaos returns a GCPChaosInformer.
 	Gcpchaos() GCPChaosInformer
 	// Httpchaos returns a HTTPChaosInformer.
@@ -78,6 +80,11 @@ func (v *version) Azurechaos() AzureChaosInformer {
 // Blockchaos returns a BlockChaosInformer.
 func (v *version) Blockchaos() BlockChaosInformer {
 	return &blockChaosInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// EnvoyChaoses returns a EnvoyChaosInformer.
+func (v *version) EnvoyChaoses() EnvoyChaosInformer {
+	return &envoyChaosInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // Gcpchaos returns a GCPChaosInformer.

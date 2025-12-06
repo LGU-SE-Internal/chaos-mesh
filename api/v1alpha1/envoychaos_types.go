@@ -54,7 +54,7 @@ const (
 
 // EnvoyChaosSpec defines the desired state of EnvoyChaos
 type EnvoyChaosSpec struct {
-	PodSelector `json:",inline"`
+	EnvoySelector `json:",inline"`
 
 	// Action defines the specific Envoy chaos action.
 	// Supported action: fault, delay, abort
@@ -164,6 +164,15 @@ type EnvoyAbortConfig struct {
 	Percentage *int32 `json:"percentage,omitempty"`
 }
 
+// EnvoySelector defines the target for EnvoyChaos.
+// EnvoyChaos works at service level, not pod level.
+type EnvoySelector struct {
+	// TargetNamespace specifies the namespace where the target service resides.
+	// If not specified, defaults to the namespace of the EnvoyChaos resource.
+	// +optional
+	TargetNamespace string `json:"targetNamespace,omitempty"`
+}
+
 type EnvoyChaosStatus struct {
 	ChaosStatus `json:",inline"`
 
@@ -174,7 +183,7 @@ type EnvoyChaosStatus struct {
 
 func (obj *EnvoyChaos) GetSelectorSpecs() map[string]interface{} {
 	return map[string]interface{}{
-		".": &obj.Spec.PodSelector,
+		".": &obj.Spec.EnvoySelector,
 	}
 }
 
