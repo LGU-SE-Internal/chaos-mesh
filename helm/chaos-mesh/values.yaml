@@ -558,6 +558,7 @@ webhook:
     - azurechaos
     - gcpchaos
     - dnschaos
+    - envoychaos
     - jvmchaos
     - schedule
     - workflow
