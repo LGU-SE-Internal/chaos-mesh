@@ -2,13 +2,64 @@
 
 ## ⚠️ Important Notice
 
-**Cilium Envoy Limitation**: Cilium's Envoy proxy is a custom build that does NOT include the HTTP fault filter (see [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)). Therefore, **EnvoyChaos cannot be used directly with Cilium Envoy**.
+**Cilium Envoy Limitation**: Cilium's default Envoy proxy is a custom build that does NOT include the HTTP fault filter (see [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)).
 
-## Recommended Alternatives
+✅ **Workaround Available**: You can enable fault injection by:
+- Manually compiling Cilium Envoy with fault extension enabled
+- Deploying the custom Envoy image as a DaemonSet
+- Reference: [Custom Envoy Configurations in Cilium](https://medium.com/@samyak-devops/how-to-apply-custom-envoy-configurations-in-a-cilium-setup-with-rate-limiting-example-5301972460f2)
 
-Since Cilium Envoy lacks fault injection support, consider these alternatives:
+## Usage with Custom Cilium Envoy
 
-### Option 1: Use Istio EnvoyFilter (Recommended)
+If you've built Cilium Envoy with fault filter support:
+
+### Basic Setup
+
+1. Deploy your custom Cilium Envoy with fault extension enabled
+2. Create an EnvoyChaos resource:
+
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: EnvoyChaos
+metadata:
+  name: grpc-delay-example
+  namespace: default
+spec:
+  selector:
+    namespaces:
+      - default
+    labelSelectors:
+      app: my-grpc-service
+  mode: all
+  protocol: grpc
+  action: delay
+  delay:
+    fixedDelay: "500ms"
+    percentage: 50
+  duration: "60s"
+```
+
+### Verification
+
+```bash
+# Check if CiliumEnvoyConfig was created
+kubectl get ciliumenvoyconfigs -A
+
+# View Envoy logs
+kubectl logs -n <namespace> <cilium-envoy-pod>
+
+# Monitor controller logs
+kubectl logs -n chaos-mesh <controller-pod> | grep envoychaos
+
+# Test the fault injection
+# You should observe 500ms delay on 50% of requests
+```
+
+## Alternative Solutions
+
+If not using custom Cilium Envoy, consider these alternatives:
+
+### Option 1: Use Istio EnvoyFilter
 
 If you have Istio deployed, use native Istio EnvoyFilter for fault injection:
 

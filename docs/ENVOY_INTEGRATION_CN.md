@@ -2,7 +2,12 @@
 
 ## 重要说明 (Important Notice)
 
-⚠️ **Cilium Envoy 限制**: Cilium 的 Envoy proxy 是定制版本，不包含 HTTP fault filter 功能（参见 [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)）。因此 **EnvoyChaos 不能直接与 Cilium Envoy 配合使用**。
+⚠️ **Cilium Envoy 限制**: Cilium 的默认 Envoy proxy 是定制版本，不包含 HTTP fault filter 功能（参见 [cilium/proxy#62](https://github.com/cilium/proxy/issues/62)）。
+
+✅ **解决方案**: 可以通过以下方式启用 fault filter：
+- 手动编译 Cilium Envoy 并启用 fault extension
+- 将定制的 Envoy image 部署为 DaemonSet
+- 参考: [How to Apply Custom Envoy Configurations in Cilium](https://medium.com/@samyak-devops/how-to-apply-custom-envoy-configurations-in-a-cilium-setup-with-rate-limiting-example-5301972460f2)
 
 ## 问题解答 (Answers to Questions)
 
@@ -10,7 +15,8 @@
 
 **答：取决于您的环境。**
 
-- **如果使用 Cilium Envoy**：不支持，需要使用其他方案（见下方替代方案）
+- **如果使用默认 Cilium Envoy**：不支持，需要使用定制 image 或其他方案
+- **如果使用定制 Cilium Envoy**（启用 fault filter）：可以使用，配合 CiliumEnvoyConfig
 - **如果使用 Istio**：不需要额外安装，Istio 的 Envoy sidecar 支持 fault filter
 - **如果没有 Envoy**：需要部署标准 Envoy 或使用 HTTPChaos 替代方案
 
@@ -36,11 +42,57 @@ EnvoyChaos 已经完全集成到 Chaos Mesh 的现有流程中：
 
 **不需要**直接调用 Envoy 的 SDK 或 xDS API。
 
+## 使用方案 (Usage Options)
+
+### 方案 0: 使用定制 Cilium Envoy（新方案）
+
+如果您已经编译了包含 fault filter 的定制 Cilium Envoy：
+
+**步骤**：
+1. 编译 Cilium Envoy 并启用 fault extension
+2. 将定制 image 部署为 DaemonSet
+3. 使用 EnvoyChaos CRD 配合 CiliumEnvoyConfig
+
+**示例配置**：
+```yaml
+apiVersion: chaos-mesh.org/v1alpha1
+kind: EnvoyChaos
+metadata:
+  name: grpc-delay-custom-cilium
+spec:
+  selector:
+    labelSelectors:
+      app: my-grpc-service
+  mode: all
+  protocol: grpc
+  action: delay
+  delay:
+    fixedDelay: "500ms"
+    percentage: 50
+  duration: "60s"
+```
+
+**验证方法**：
+```bash
+# 检查 CiliumEnvoyConfig 是否创建
+kubectl get ciliumenvoyconfigs -A
+
+# 查看 Envoy 日志
+kubectl logs -n <namespace> <cilium-envoy-pod>
+
+# 测试故障注入效果
+# 应该观察到 50% 的请求有 500ms 延迟
+```
+
+**参考**：
+- [Custom Envoy Configurations in Cilium](https://medium.com/@samyak-devops/how-to-apply-custom-envoy-configurations-in-a-cilium-setup-with-rate-limiting-example-5301972460f2)
+- [Cilium Envoy Configuration](https://docs.cilium.io/en/stable/network/servicemesh/envoy-traffic-management/)
+
 ## 替代方案 (Alternative Solutions)
 
-由于 Cilium Envoy 不支持 fault filter，推荐以下替代方案：
+如果不使用定制 Cilium Envoy，推荐以下替代方案：
 
-### 方案 1: 使用 Istio EnvoyFilter（推荐）
+### 方案 1: 使用 Istio EnvoyFilter
 
 如果您的集群中已部署 Istio：
 
@@ -373,15 +425,57 @@ spec:
 
 ### 混沌不生效
 
-1. 检查 Envoy 是否正在运行
+1. 检查 Envoy 是否正在运行并支持 fault filter
 2. 验证 CiliumEnvoyConfig 资源是否创建：
    ```bash
    kubectl get ciliumenvoyconfigs -A
    ```
-3. 查看 Envoy 日志：
+3. 查看 CiliumEnvoyConfig 详情：
+   ```bash
+   kubectl describe ciliumenvoyconfig <config-name> -n <namespace>
+   ```
+4. 查看 Envoy 日志：
    ```bash
    kubectl logs -n <namespace> <envoy-pod> -c cilium-envoy
    ```
+5. 检查 Envoy 是否加载了 fault filter：
+   ```bash
+   # 通过 admin interface 检查配置
+   kubectl port-forward -n <namespace> <envoy-pod> 15000:15000
+   curl localhost:15000/config_dump | grep -A 20 "fault"
+   ```
+
+### CiliumEnvoyConfig 不工作
+
+**可能原因**：
+1. **Envoy 不支持 fault filter**：确认使用的是包含 fault extension 的定制 image
+2. **Service 引用错误**：检查 `spec.services` 是否引用了正确的 Service
+3. **资源格式错误**：验证 CiliumEnvoyConfig 的 `spec.resources` 格式
+
+**解决方法**：
+```bash
+# 1. 确认 Envoy image 包含 fault filter
+kubectl get daemonset <envoy-daemonset> -o yaml | grep image
+
+# 2. 手动测试 CiliumEnvoyConfig
+kubectl apply -f - <<EOF
+apiVersion: cilium.io/v2
+kind: CiliumEnvoyConfig
+metadata:
+  name: test-fault-filter
+spec:
+  services:
+  - name: my-service
+    namespace: default
+  resources:
+  - "@type": type.googleapis.com/envoy.config.listener.v3.Listener
+    name: test-listener
+    # ... fault filter configuration
+EOF
+
+# 3. 查看 Envoy 是否接受配置
+kubectl logs -n <namespace> <envoy-pod> | grep -i "fault\|error"
+```
 
 ### gRPC 状态码无效
 
