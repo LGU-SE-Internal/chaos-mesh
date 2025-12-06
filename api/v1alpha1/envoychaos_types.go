@@ -44,10 +44,10 @@ type EnvoyChaosAction string
 const (
 	// EnvoyFaultAction represents the chaos action of injecting faults via Envoy fault filter.
 	EnvoyFaultAction EnvoyChaosAction = "fault"
-	
+
 	// EnvoyDelayAction represents the chaos action of adding delay to gRPC/HTTP requests.
 	EnvoyDelayAction EnvoyChaosAction = "delay"
-	
+
 	// EnvoyAbortAction represents the chaos action of aborting gRPC/HTTP requests.
 	EnvoyAbortAction EnvoyChaosAction = "abort"
 )

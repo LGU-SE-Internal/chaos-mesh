@@ -48,7 +48,7 @@ func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Reco
 	impl.Log.Info("envoychaos Apply", "namespace", obj.GetNamespace(), "name", obj.GetName())
 
 	envoychaos := obj.(*v1alpha1.EnvoyChaos)
-	
+
 	// EnvoyChaos works at service level, not pod level
 	// We only need to process once (on first call)
 	if index > 0 {
@@ -84,7 +84,7 @@ func (impl *Impl) Recover(ctx context.Context, index int, records []*v1alpha1.Re
 	impl.Log.Info("envoychaos Recover", "namespace", obj.GetNamespace(), "name", obj.GetName())
 
 	envoychaos := obj.(*v1alpha1.EnvoyChaos)
-	
+
 	// Only need to process once
 	if index > 0 {
 		return v1alpha1.NotInjected, nil
@@ -126,7 +126,7 @@ func (impl *Impl) applyEnvoyConfigForService(ctx context.Context, envoychaos *v1
 	}
 
 	targetService := envoychaos.Spec.TargetService
-	
+
 	// Create CiliumEnvoyConfig resource name
 	configName := fmt.Sprintf("chaos-%s", envoychaos.Name)
 	configNamespace := serviceNamespace
@@ -166,7 +166,7 @@ func (impl *Impl) buildCiliumEnvoyConfig(
 		"name":      serviceName,
 		"namespace": serviceNamespace,
 	}
-	
+
 	// Add port if specified
 	if targetPort != nil {
 		serviceRef["ports"] = []interface{}{int(*targetPort)}
