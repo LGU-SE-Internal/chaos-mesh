@@ -38,6 +38,7 @@ func GrantAccess() error {
 	// TODO: encapsulate these logic with chaos-daemon StressChaos part
 	cgroupScanner := bufio.NewScanner(cgroupFile)
 	var deviceCgroupPath string
+	var isCgroupV2 bool
 	for cgroupScanner.Scan() {
 		var (
 			text  = cgroupScanner.Text()
@@ -47,8 +48,17 @@ func GrantAccess() error {
 			return errors.Errorf("invalid cgroup entry: %q", text)
 		}
 
-		if parts[1] == "devices" {
+		// cgroup v1: controllers are in parts[1], e.g. "devices"
+		// cgroup v2: parts[1] is empty and unified hierarchy path is in parts[2]
+		// Prefer v1 "devices" entry if present; only use v2 unified entry if no v1 found
+		if strings.Contains(parts[1], "devices") {
 			deviceCgroupPath = parts[2]
+			isCgroupV2 = false
+		} else if parts[1] == "" && len(deviceCgroupPath) == 0 {
+			// unified cgroup v2 entry like: "0::/user.slice/..."
+			// Only set if we haven't found a v1 devices entry yet
+			deviceCgroupPath = parts[2]
+			isCgroupV2 = true
 		}
 	}
 
@@ -61,8 +71,43 @@ func GrantAccess() error {
 	}
 
 	// It's hard to use /pkg/chaosdaemon/cgroups to wrap this logic.
-	deviceCgroupPath = "/host-sys/fs/cgroup/devices" + deviceCgroupPath + "/devices.allow"
-	f, err := os.OpenFile(deviceCgroupPath, os.O_WRONLY, 0)
+	// For cgroup v1 the devices controller is usually mounted under
+	// /sys/fs/cgroup/devices, while cgroup v2 uses a unified mount
+	// under /sys/fs/cgroup. The host's fs is exposed under /host-sys.
+	var finalPath string
+	if isCgroupV2 {
+		// For cgroup v2, check if devices controller is available/enabled
+		// In cgroup v2, the devices controller may not be enabled on all systems
+		// First try to read from /host-sys (in container context) or fallback to /sys (on host)
+		var controllersPath string
+		if _, err := os.Stat("/host-sys/fs/cgroup/cgroup.controllers"); err == nil {
+			controllersPath = "/host-sys/fs/cgroup/cgroup.controllers"
+		} else {
+			controllersPath = "/sys/fs/cgroup/cgroup.controllers"
+		}
+
+		if controllers, err := os.ReadFile(controllersPath); err == nil && !strings.Contains(string(controllers), "devices") {
+			// devices controller not enabled in cgroup v2, skip device granting
+			// This is not an error - it's a valid configuration where device isolation
+			// is not enforced through cgroup devices controller
+			return nil
+		}
+
+		// Avoid double slashes when deviceCgroupPath is "/"
+		if deviceCgroupPath == "/" {
+			finalPath = "/host-sys/fs/cgroup/devices.allow"
+		} else {
+			finalPath = "/host-sys/fs/cgroup" + deviceCgroupPath + "/devices.allow"
+		}
+	} else {
+		// Avoid double slashes when deviceCgroupPath is "/"
+		if deviceCgroupPath == "/" {
+			finalPath = "/host-sys/fs/cgroup/devices/devices.allow"
+		} else {
+			finalPath = "/host-sys/fs/cgroup/devices" + deviceCgroupPath + "/devices.allow"
+		}
+	}
+	f, err := os.OpenFile(finalPath, os.O_WRONLY, 0)
 	if err != nil {
 		return err
 	}
