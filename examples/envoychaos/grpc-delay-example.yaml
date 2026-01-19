@@ -1,0 +1,50 @@
+# Copyright 2021 Chaos Mesh Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: EnvoyChaos
+metadata:
+  name: grpc-delay-example
+  namespace: default
+spec:
+  # Protocol type: grpc or http
+  protocol: grpc
+  
+  # Action type: delay, abort, or fault
+  action: delay
+  
+  # Delay configuration
+  delay:
+    # Fixed delay duration
+    fixedDelay: "500ms"
+    # Percentage of requests to delay (0-100)
+    percentage: 50
+  
+  # Optional: Target specific gRPC method
+  method: "/grpc.health.v1.Health/Check"
+  
+  # Required: Target service for fault injection
+  targetService: my-grpc-service
+  
+  # Optional: Target specific port
+  targetPort: 50051
+  
+  # Duration of the chaos experiment
+  duration: "60s"
+  
+  # Note: EnvoyChaos operates at service level, not pod level.
+  # The selector fields are not used for EnvoyChaos.
+  # Simply specify targetService and optionally targetPort.
+

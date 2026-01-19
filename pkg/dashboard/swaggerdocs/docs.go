@@ -2719,6 +2719,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "envoyChaos": {
+                    "description": "+optional",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyChaosSpec"
+                        }
+                    ]
+                },
                 "gcpChaos": {
                     "description": "+optional",
                     "allOf": [
@@ -3008,6 +3016,129 @@ const docTemplate = `{
                 },
                 "duplicate": {
                     "type": "string"
+                }
+            }
+        },
+        "github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyAbortConfig": {
+            "type": "object",
+            "properties": {
+                "grpcStatus": {
+                    "description": "GrpcStatus represents the gRPC status code to return when aborting gRPC requests.\nIf not specified for gRPC, defaults to UNAVAILABLE (14).\n+optional",
+                    "type": "integer"
+                },
+                "httpStatus": {
+                    "description": "HTTPStatus represents the HTTP status code to return when aborting.\nFor gRPC, this will be mapped to appropriate gRPC status code.\n+optional",
+                    "type": "integer"
+                },
+                "percentage": {
+                    "description": "Percentage is the percentage of requests to abort.\nValid range is 0 to 100 (whole numbers only). If not specified, inherits from parent.\n+optional\n+kubebuilder:validation:Minimum=0\n+kubebuilder:validation:Maximum=100",
+                    "type": "integer"
+                }
+            }
+        },
+        "github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyChaosAction": {
+            "type": "string",
+            "enum": [
+                "fault",
+                "delay",
+                "abort"
+            ],
+            "x-enum-varnames": [
+                "EnvoyFaultAction",
+                "EnvoyDelayAction",
+                "EnvoyAbortAction"
+            ]
+        },
+        "github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyChaosSpec": {
+            "type": "object",
+            "properties": {
+                "abort": {
+                    "description": "Abort represents the abort configuration for fault injection.\n+optional",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyAbortConfig"
+                        }
+                    ]
+                },
+                "action": {
+                    "description": "Action defines the specific Envoy chaos action.\nSupported action: fault, delay, abort\nDefault action: fault\n+kubebuilder:validation:Enum=fault;delay;abort",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyChaosAction"
+                        }
+                    ]
+                },
+                "delay": {
+                    "description": "Delay represents the delay configuration for fault injection.\n+optional",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyDelayConfig"
+                        }
+                    ]
+                },
+                "duration": {
+                    "description": "Duration represents the duration of the chaos action.\n+optional",
+                    "type": "string"
+                },
+                "envoyConfigName": {
+                    "description": "EnvoyConfigName is the name of the CiliumEnvoyConfig or EnvoyFilter to inject faults.\nIf not provided, will auto-detect the Envoy configuration.\n+optional",
+                    "type": "string"
+                },
+                "envoyConfigNamespace": {
+                    "description": "EnvoyConfigNamespace is the namespace of the CiliumEnvoyConfig or EnvoyFilter.\nDefaults to the same namespace as the chaos object.\n+optional",
+                    "type": "string"
+                },
+                "headers": {
+                    "description": "Headers is a rule to select target by headers in request.\nThe key-value pairs represent header name and header value pairs.\nValues support exact matching by default. For regex matching, prefix the value with \"regex:\".\nExample: {\"x-user-id\": \"123\"} for exact match, {\"x-user-id\": \"regex:^test-.*\"} for regex.\n+optional",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "method": {
+                    "description": "Method is a rule to select target by grpc method or http method in request.\n+optional",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "Path is a rule to select target by uri path in http/grpc request.\nSupport exact match, prefix match and regex match.\n+optional",
+                    "type": "string"
+                },
+                "percentage": {
+                    "description": "Percentage is the percentage of requests to which the fault will be injected.\nValid range is 0 to 100 (whole numbers only, e.g., 50 = 50%)\nIf not specified, fault injection applies to all matching requests\n+optional\n+kubebuilder:validation:Minimum=0\n+kubebuilder:validation:Maximum=100",
+                    "type": "integer"
+                },
+                "protocol": {
+                    "description": "Protocol defines the protocol type for fault injection.\n+kubebuilder:validation:Enum=grpc;http\n+optional",
+                    "type": "string"
+                },
+                "remoteCluster": {
+                    "description": "RemoteCluster represents the remote cluster where the chaos will be deployed\n+optional",
+                    "type": "string"
+                },
+                "targetNamespace": {
+                    "description": "TargetNamespace specifies the namespace where the target service resides.\nIf not specified, defaults to the namespace of the EnvoyChaos resource.\n+optional",
+                    "type": "string"
+                },
+                "targetPort": {
+                    "description": "TargetPort specifies the port number of the target service.\n+optional",
+                    "type": "integer"
+                },
+                "targetService": {
+                    "description": "TargetService specifies the Kubernetes service to target for fault injection.\n+optional",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyDelayConfig": {
+            "type": "object",
+            "properties": {
+                "fixedDelay": {
+                    "description": "FixedDelay represents the fixed delay duration.\nA duration string is a possibly unsigned sequence of\ndecimal numbers, each with optional fraction and a unit suffix,\nsuch as \"300ms\", \"2h45m\".\nValid time units are \"ns\", \"us\" (or \"µs\"), \"ms\", \"s\", \"m\", \"h\".\n+optional",
+                    "type": "string"
+                },
+                "percentage": {
+                    "description": "Percentage is the percentage of requests to which delay will be injected.\nValid range is 0 to 100 (whole numbers only). If not specified, inherits from parent.\n+optional\n+kubebuilder:validation:Minimum=0\n+kubebuilder:validation:Maximum=100",
+                    "type": "integer"
                 }
             }
         },
@@ -5494,6 +5625,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "envoyChaos": {
+                    "description": "+optional",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyChaosSpec"
+                        }
+                    ]
+                },
                 "gcpChaos": {
                     "description": "+optional",
                     "allOf": [
@@ -5621,6 +5760,7 @@ const docTemplate = `{
                 "AzureChaos",
                 "BlockChaos",
                 "DNSChaos",
+                "EnvoyChaos",
                 "GCPChaos",
                 "HTTPChaos",
                 "IOChaos",
@@ -5638,6 +5778,7 @@ const docTemplate = `{
                 "ScheduleTypeAzureChaos",
                 "ScheduleTypeBlockChaos",
                 "ScheduleTypeDNSChaos",
+                "ScheduleTypeEnvoyChaos",
                 "ScheduleTypeGCPChaos",
                 "ScheduleTypeHTTPChaos",
                 "ScheduleTypeIOChaos",
@@ -5986,6 +6127,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "envoyChaos": {
+                    "description": "+optional",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_chaos-mesh_chaos-mesh_api_v1alpha1.EnvoyChaosSpec"
+                        }
+                    ]
+                },
                 "gcpChaos": {
                     "description": "+optional",
                     "allOf": [
@@ -6111,6 +6260,7 @@ const docTemplate = `{
                 "AzureChaos",
                 "BlockChaos",
                 "DNSChaos",
+                "EnvoyChaos",
                 "GCPChaos",
                 "HTTPChaos",
                 "IOChaos",
@@ -6133,6 +6283,7 @@ const docTemplate = `{
                 "TypeAzureChaos",
                 "TypeBlockChaos",
                 "TypeDNSChaos",
+                "TypeEnvoyChaos",
                 "TypeGCPChaos",
                 "TypeHTTPChaos",
                 "TypeIOChaos",

@@ -277,6 +277,69 @@ func TestDNSChaosListChaos(t *testing.T) {
 	chaos.ListChaos()
 }
 
+func TestEnvoyChaosIsDeleted(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &EnvoyChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.IsDeleted()
+}
+
+func TestEnvoyChaosIsIsPaused(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &EnvoyChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.IsPaused()
+}
+
+func TestEnvoyChaosGetDuration(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &EnvoyChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.Spec.GetDuration()
+}
+
+func TestEnvoyChaosGetStatus(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &EnvoyChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.GetStatus()
+}
+
+func TestEnvoyChaosGetSpecAndMetaString(t *testing.T) {
+	g := NewGomegaWithT(t)
+	chaos := &EnvoyChaos{}
+	err := faker.FakeData(chaos)
+	g.Expect(err).To(BeNil())
+	chaos.GetSpecAndMetaString()
+}
+
+func TestEnvoyChaosListChaos(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &EnvoyChaosList{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.ListChaos()
+}
+
 func TestGCPChaosIsDeleted(t *testing.T) {
 	g := NewGomegaWithT(t)
 

@@ -1,0 +1,262 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: envoychaos.chaos-mesh.org
+spec:
+  group: chaos-mesh.org
+  names:
+    kind: EnvoyChaos
+    listKind: EnvoyChaosList
+    plural: envoychaos
+    singular: envoychaos
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.action
+      name: action
+      type: string
+    - jsonPath: .spec.duration
+      name: duration
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: EnvoyChaos is the Schema for the envoychaos API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: EnvoyChaosSpec defines the desired state of EnvoyChaos
+            properties:
+              abort:
+                description: Abort represents the abort configuration for fault injection.
+                properties:
+                  grpcStatus:
+                    description: |-
+                      GrpcStatus represents the gRPC status code to return when aborting gRPC requests.
+                      If not specified for gRPC, defaults to UNAVAILABLE (14).
+                    format: int32
+                    type: integer
+                  httpStatus:
+                    description: |-
+                      HTTPStatus represents the HTTP status code to return when aborting.
+                      For gRPC, this will be mapped to appropriate gRPC status code.
+                    format: int32
+                    type: integer
+                  percentage:
+                    description: |-
+                      Percentage is the percentage of requests to abort.
+                      Valid range is 0 to 100 (whole numbers only). If not specified, inherits from parent.
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                type: object
+              action:
+                description: |-
+                  Action defines the specific Envoy chaos action.
+                  Supported action: fault, delay, abort
+                  Default action: fault
+                enum:
+                - fault
+                - delay
+                - abort
+                type: string
+              delay:
+                description: Delay represents the delay configuration for fault injection.
+                properties:
+                  fixedDelay:
+                    description: |-
+                      FixedDelay represents the fixed delay duration.
+                      A duration string is a possibly unsigned sequence of
+                      decimal numbers, each with optional fraction and a unit suffix,
+                      such as "300ms", "2h45m".
+                      Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
+                    type: string
+                  percentage:
+                    description: |-
+                      Percentage is the percentage of requests to which delay will be injected.
+                      Valid range is 0 to 100 (whole numbers only). If not specified, inherits from parent.
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                type: object
+              duration:
+                description: Duration represents the duration of the chaos action.
+                type: string
+              envoyConfigName:
+                description: |-
+                  EnvoyConfigName is the name of the CiliumEnvoyConfig or EnvoyFilter to inject faults.
+                  If not provided, will auto-detect the Envoy configuration.
+                type: string
+              envoyConfigNamespace:
+                description: |-
+                  EnvoyConfigNamespace is the namespace of the CiliumEnvoyConfig or EnvoyFilter.
+                  Defaults to the same namespace as the chaos object.
+                type: string
+              headers:
+                additionalProperties:
+                  type: string
+                description: |-
+                  Headers is a rule to select target by headers in request.
+                  The key-value pairs represent header name and header value pairs.
+                  Values support exact matching by default. For regex matching, prefix the value with "regex:".
+                  Example: {"x-user-id": "123"} for exact match, {"x-user-id": "regex:^test-.*"} for regex.
+                type: object
+              method:
+                description: Method is a rule to select target by grpc method or http
+                  method in request.
+                type: string
+              path:
+                description: |-
+                  Path is a rule to select target by uri path in http/grpc request.
+                  Support exact match, prefix match and regex match.
+                type: string
+              percentage:
+                description: |-
+                  Percentage is the percentage of requests to which the fault will be injected.
+                  Valid range is 0 to 100 (whole numbers only, e.g., 50 = 50%)
+                  If not specified, fault injection applies to all matching requests
+                format: int32
+                maximum: 100
+                minimum: 0
+                type: integer
+              protocol:
+                description: Protocol defines the protocol type for fault injection.
+                enum:
+                - grpc
+                - http
+                type: string
+              remoteCluster:
+                description: RemoteCluster represents the remote cluster where the
+                  chaos will be deployed
+                type: string
+              targetNamespace:
+                description: |-
+                  TargetNamespace specifies the namespace where the target service resides.
+                  If not specified, defaults to the namespace of the EnvoyChaos resource.
+                type: string
+              targetPort:
+                description: TargetPort specifies the port number of the target service.
+                format: int32
+                type: integer
+              targetService:
+                description: TargetService specifies the Kubernetes service to target
+                  for fault injection.
+                type: string
+            required:
+            - action
+            type: object
+          status:
+            properties:
+              conditions:
+                description: Conditions represents the current global condition of
+                  the chaos
+                items:
+                  properties:
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              experiment:
+                description: Experiment records the last experiment state.
+                properties:
+                  containerRecords:
+                    description: Records are used to track the running status
+                    items:
+                      properties:
+                        events:
+                          description: Events are the essential details about the
+                            injections and recoveries
+                          items:
+                            properties:
+                              message:
+                                description: Message is the detail message, e.g. the
+                                  reason why we failed to inject the chaos
+                                type: string
+                              operation:
+                                description: Operation represents the operation we
+                                  are doing, when we crate this event
+                                type: string
+                              timestamp:
+                                description: Timestamp is time when we create this
+                                  event
+                                format: date-time
+                                type: string
+                              type:
+                                description: Type means the stage of this event
+                                type: string
+                            required:
+                            - operation
+                            - timestamp
+                            - type
+                            type: object
+                          type: array
+                        id:
+                          type: string
+                        injectedCount:
+                          description: InjectedCount is a counter to record the sum
+                            of successful injections
+                          type: integer
+                        phase:
+                          type: string
+                        recoveredCount:
+                          description: RecoveredCount is a counter to record the sum
+                            of successful recoveries
+                          type: integer
+                        selectorKey:
+                          type: string
+                      required:
+                      - id
+                      - injectedCount
+                      - phase
+                      - recoveredCount
+                      - selectorKey
+                      type: object
+                    type: array
+                  desiredPhase:
+                    enum:
+                    - Run
+                    - Stop
+                    type: string
+                type: object
+              instances:
+                additionalProperties:
+                  format: int64
+                  type: integer
+                description: Instances always specifies envoy chaos generation or
+                  empty
+                type: object
+            required:
+            - experiment
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
