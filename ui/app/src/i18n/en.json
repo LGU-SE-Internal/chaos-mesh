@@ -84,6 +84,9 @@
       "jvm": {
         "title": "JVM Fault"
       },
+      "runtimemutator": {
+        "title": "Runtime Mutator"
+      },
       "kernel": {
         "title": "Kernel Fault"
       },

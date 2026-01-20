@@ -18,7 +18,7 @@ import * as Yup from 'yup'
 
 import { type ExperimentKind } from '@/components/NewExperiment/types'
 
-export type Kind = Exclude<ExperimentKind, 'PhysicalMachineChaos' | 'AzureChaos'>
+export type Kind = Exclude<ExperimentKind, 'PhysicalMachineChaos' | 'AzureChaos' | 'RuntimeMutatorChaos'>
 export type KindPhysic =
   | Extract<Kind, 'NetworkChaos' | 'StressChaos' | 'TimeChaos'>
   | 'DiskChaos'
@@ -890,6 +890,111 @@ const data: Record<Kind, Definition> = {
       },
     ],
   },
+  RuntimeMutatorChaos: {
+    categories: [
+      {
+        name: 'Constant',
+        key: 'constant',
+        spec: {
+          action: 'constant' as any,
+          class: {
+            field: 'text',
+            label: 'Class',
+            value: '',
+            helperText: 'The fully qualified class name to mutate',
+          },
+          method: {
+            field: 'text',
+            label: 'Method',
+            value: '',
+            helperText: 'The method name to mutate',
+          },
+          from: {
+            field: 'text',
+            label: 'From',
+            value: '',
+            helperText: 'The original value to replace',
+          },
+          to: {
+            field: 'text',
+            label: 'To',
+            value: '',
+            helperText: 'The new value to inject',
+          },
+          port: {
+            field: 'number',
+            label: 'Port',
+            value: 9090,
+            helperText: 'The control port for the mutator agent',
+          },
+        },
+      },
+      {
+        name: 'Operator',
+        key: 'operator',
+        spec: {
+          action: 'operator' as any,
+          class: {
+            field: 'text',
+            label: 'Class',
+            value: '',
+            helperText: 'The fully qualified class name to mutate',
+          },
+          method: {
+            field: 'text',
+            label: 'Method',
+            value: '',
+            helperText: 'The method name to mutate',
+          },
+          strategy: {
+            field: 'select',
+            items: ['add', 'subtract', 'multiply', 'divide', 'modulo'],
+            label: 'Strategy',
+            value: '',
+            helperText: 'The operator mutation strategy',
+          },
+          port: {
+            field: 'number',
+            label: 'Port',
+            value: 9090,
+            helperText: 'The control port for the mutator agent',
+          },
+        },
+      },
+      {
+        name: 'String',
+        key: 'string',
+        spec: {
+          action: 'string' as any,
+          class: {
+            field: 'text',
+            label: 'Class',
+            value: '',
+            helperText: 'The fully qualified class name to mutate',
+          },
+          method: {
+            field: 'text',
+            label: 'Method',
+            value: '',
+            helperText: 'The method name to mutate',
+          },
+          strategy: {
+            field: 'select',
+            items: ['empty', 'null', 'reverse', 'uppercase', 'lowercase'],
+            label: 'Strategy',
+            value: '',
+            helperText: 'The string mutation strategy',
+          },
+          port: {
+            field: 'number',
+            label: 'Port',
+            value: 9090,
+            helperText: 'The control port for the mutator agent',
+          },
+        },
+      },
+    ],
+  },
 }
 
 const networkPhysicCommon: Spec = {
@@ -1480,6 +1585,24 @@ export const schema: Partial<Record<Kind, Record<string, Yup.ObjectSchema>>> = {
     }),
     'container-kill': Yup.object({
       containerNames: Yup.array().of(Yup.string()).required('At least one container name is required'),
+    }),
+  },
+  RuntimeMutatorChaos: {
+    constant: Yup.object({
+      class: Yup.string().required('The class name is required'),
+      method: Yup.string().required('The method name is required'),
+      from: Yup.string().required('The from value is required'),
+      to: Yup.string().required('The to value is required'),
+    }),
+    operator: Yup.object({
+      class: Yup.string().required('The class name is required'),
+      method: Yup.string().required('The method name is required'),
+      strategy: Yup.string().required('The strategy is required'),
+    }),
+    string: Yup.object({
+      class: Yup.string().required('The class name is required'),
+      method: Yup.string().required('The method name is required'),
+      strategy: Yup.string().required('The strategy is required'),
     }),
   },
   TimeChaos: {

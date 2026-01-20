@@ -81,6 +81,9 @@
       "jvm": {
         "title": "JVM 故障"
       },
+      "runtimemutator": {
+        "title": "运行时变异器"
+      },
       "block": {
         "title": "块存储故障"
       },

@@ -158,6 +158,16 @@ export interface Time {
   containerNames: string[]
 }
 
+export interface RuntimeMutator {
+  action: 'constant' | 'operator' | 'string'
+  class: string
+  method: string
+  port?: number
+  from?: string
+  to?: string
+  strategy?: string
+}
+
 export interface ExperimentType {
   AWSChaos: AWS
   AzureChaos?: unknown
@@ -169,6 +179,7 @@ export interface ExperimentType {
   KernelChaos: Kernel
   NetworkChaos: Network
   PodChaos: Pod
+  RuntimeMutatorChaos?: RuntimeMutator
   StressChaos: Stress
   TimeChaos: Time
   PhysicalMachineChaos?: unknown

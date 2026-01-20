@@ -73,6 +73,9 @@ export function iconByKind(kind: string, size: 'small' | 'inherit' | 'medium' | 
     case 'JVMChaos':
       icon = <JavaIcon />
       break
+    case 'RuntimeMutatorChaos':
+      icon = <JavaIcon />
+      break
     case 'KernelChaos':
       icon = <LinuxKernelIcon />
       break
