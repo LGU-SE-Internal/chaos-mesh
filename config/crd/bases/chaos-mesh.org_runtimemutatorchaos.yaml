@@ -1,0 +1,253 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: runtimemutatorchaos.chaos-mesh.org
+spec:
+  group: chaos-mesh.org
+  names:
+    kind: RuntimeMutatorChaos
+    listKind: RuntimeMutatorChaosList
+    plural: runtimemutatorchaos
+    singular: runtimemutatorchaos
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.action
+      name: action
+      type: string
+    - jsonPath: .spec.duration
+      name: duration
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: RuntimeMutatorChaos is the Schema for the runtimemutatorchaos API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RuntimeMutatorChaosSpec defines the desired state of RuntimeMutatorChaos
+            properties:
+              action:
+                description: |-
+                  Action defines the specific runtime mutator chaos action.
+                  Supported action: constant;operator;string
+                enum:
+                - constant
+                - operator
+                - string
+                type: string
+              class:
+                description: Java class to target for mutation
+                type: string
+              duration:
+                description: Duration represents the duration of the chaos action
+                type: string
+              method:
+                description: Method in the Java class to target for mutation
+                type: string
+              from:
+                description: 'For constant mutation: the original value to replace'
+                type: string
+              to:
+                description: 'For constant mutation: the new value to inject'
+                type: string
+              strategy:
+                description: 'For operator/string mutation: the mutation strategy'
+                type: string
+              port:
+                description: The port of the runtime mutator agent server, default 9090
+                format: int32
+                type: integer
+              remoteCluster:
+                description: RemoteCluster represents the remote cluster where the chaos will be deployed
+                type: string
+              containerSelectors:
+                description: ContainerSelectors is the selector for targeting pods
+                properties:
+                  containers:
+                    items:
+                      type: string
+                    type: array
+                  labelSelectors:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  annotationSelectors:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  nodeSelectors:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  namespaceSelectors:
+                    items:
+                      type: string
+                    type: array
+                  namespaces:
+                    items:
+                      type: string
+                    type: array
+                  nodeName:
+                    type: string
+                  podPhaseSelectors:
+                    items:
+                      type: string
+                    type: array
+                  pods:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    type: object
+                  mode:
+                    description: 'Mode defines how to select pods. Supported modes: one, all, fixed, fixed-percent, random-max-percent'
+                    enum:
+                    - one
+                    - all
+                    - fixed
+                    - fixed-percent
+                    - random-max-percent
+                    type: string
+                  value:
+                    description: Value depends on mode. If mode is fixed, it specifies the number of pods to select. If mode is fixed-percent, it specifies the percentage of pods to select (0-100). If mode is random-max-percent, it specifies the maximum percentage of pods to select (0-100).
+                    type: string
+                required:
+                - mode
+                type: object
+              selector:
+                description: Selector is used to select pods that are used to inject chaos action.
+                properties:
+                  annotationSelectors:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  labelSelectors:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  namespaceSelectors:
+                    items:
+                      type: string
+                    type: array
+                  namespaces:
+                    items:
+                      type: string
+                    type: array
+                  nodeName:
+                    type: string
+                  nodeSelectors:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  podPhaseSelectors:
+                    items:
+                      type: string
+                    type: array
+                  pods:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    type: object
+                type: object
+            required:
+            - action
+            - mode
+            type: object
+          status:
+            description: RuntimeMutatorChaosStatus defines the observed state of RuntimeMutatorChaos
+            properties:
+              conditions:
+                description: Conditions represents the conditions of the chaos
+                items:
+                  properties:
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  type: object
+                type: array
+              experiment:
+                description: Experiment records the last experiment state.
+                properties:
+                  duration:
+                    type: string
+                  endTime:
+                    format: date-time
+                    type: string
+                  startTime:
+                    format: date-time
+                    type: string
+                type: object
+              failedMessage:
+                description: FailedMessage defines the failure injection message
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the generation observed
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the chaos status phase
+                type: string
+              reason:
+                description: Reason defines the failure injection reason
+                type: string
+              recovers:
+                description: RecoveredRecords is the records of recovered experiments
+                items:
+                  properties:
+                    endTime:
+                      format: date-time
+                      type: string
+                    startTime:
+                      format: date-time
+                      type: string
+                  type: object
+                type: array
+              scheduler:
+                description: Schedule is the schedule state
+                properties:
+                  nextRecover:
+                    description: Next time when this action will be recovered
+                    format: date-time
+                    type: string
+                  nextStart:
+                    description: Next time when this action will be applied again
+                    format: date-time
+                    type: string
+                type: object
+              selected:
+                description: Selected is the selected targets
+                items:
+                  type: string
+                type: array
+            required:
+            - phase
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
