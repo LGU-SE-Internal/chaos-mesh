@@ -67,15 +67,15 @@ type RuntimeMutatorParameter struct {
 
 	// For constant mutation: the original value to replace
 	// +optional
-	From string `json:"from,omitempty"`
+	From *string `json:"from,omitempty"`
 
 	// For constant mutation: the new value to inject
 	// +optional
-	To string `json:"to,omitempty"`
+	To *string `json:"to,omitempty"`
 
 	// For operator/string mutation: the mutation strategy
 	// +optional
-	Strategy string `json:"strategy,omitempty"`
+	Strategy *string `json:"strategy,omitempty"`
 
 	// The port of the runtime mutator agent server, default 9090
 	// +optional

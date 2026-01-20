@@ -42,6 +42,7 @@ const (
 	TypeNetworkChaos TemplateType = "NetworkChaos"
 	TypePhysicalMachineChaos TemplateType = "PhysicalMachineChaos"
 	TypePodChaos TemplateType = "PodChaos"
+	TypeRuntimeMutatorChaos TemplateType = "RuntimeMutatorChaos"
 	TypeStressChaos TemplateType = "StressChaos"
 	TypeTimeChaos TemplateType = "TimeChaos"
 
@@ -61,6 +62,7 @@ var allChaosTemplateType = []TemplateType{
 	TypeNetworkChaos,
 	TypePhysicalMachineChaos,
 	TypePodChaos,
+	TypeRuntimeMutatorChaos,
 	TypeStressChaos,
 	TypeTimeChaos,
 
@@ -91,6 +93,8 @@ type EmbedChaos struct {
 	PhysicalMachineChaos *PhysicalMachineChaosSpec `json:"physicalmachineChaos,omitempty"`
 	// +optional
 	PodChaos *PodChaosSpec `json:"podChaos,omitempty"`
+	// +optional
+	RuntimeMutatorChaos *RuntimeMutatorChaosSpec `json:"runtimemutatorChaos,omitempty"`
 	// +optional
 	StressChaos *StressChaosSpec `json:"stressChaos,omitempty"`
 	// +optional
@@ -148,6 +152,10 @@ func (it *EmbedChaos) SpawnNewObject(templateType TemplateType) (GenericChaos, e
 		result := PodChaos{}
 		result.Spec = *it.PodChaos
 		return &result, nil
+	case TypeRuntimeMutatorChaos:
+		result := RuntimeMutatorChaos{}
+		result.Spec = *it.RuntimeMutatorChaos
+		return &result, nil
 	case TypeStressChaos:
 		result := StressChaos{}
 		result.Spec = *it.StressChaos
@@ -200,6 +208,9 @@ func (it *EmbedChaos) RestoreChaosSpec(root interface{}) error {
 	case *PodChaos:
 		*it.PodChaos = chaos.Spec
 		return nil
+	case *RuntimeMutatorChaos:
+		*it.RuntimeMutatorChaos = chaos.Spec
+		return nil
 	case *StressChaos:
 		*it.StressChaos = chaos.Spec
 		return nil
@@ -249,6 +260,9 @@ func (it *EmbedChaos) SpawnNewList(templateType TemplateType) (GenericChaosList,
 		return &result, nil
 	case TypePodChaos:
 		result := PodChaosList{}
+		return &result, nil
+	case TypeRuntimeMutatorChaos:
+		result := RuntimeMutatorChaosList{}
 		return &result, nil
 	case TypeStressChaos:
 		result := StressChaosList{}
@@ -351,6 +365,14 @@ func (in *PhysicalMachineChaosList) GetItems() []GenericChaos {
 	return result
 }
 func (in *PodChaosList) GetItems() []GenericChaos {
+	var result []GenericChaos
+	for _, item := range in.Items {
+		item := item
+		result = append(result, &item)
+	}
+	return result
+}
+func (in *RuntimeMutatorChaosList) GetItems() []GenericChaos {
 	var result []GenericChaos
 	for _, item := range in.Items {
 		item := item

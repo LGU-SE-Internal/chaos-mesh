@@ -197,6 +197,140 @@ func (s *DaemonServer) UninstallJVMRules(ctx context.Context,
 	return &empty.Empty{}, nil
 }
 
+func (s *DaemonServer) InstallRuntimeMutator(ctx context.Context,
+	req *pb.RuntimeMutatorRequest) (*pb.RuntimeMutatorResponse, error) {
+	log := s.getLoggerFromContext(ctx)
+	log.Info("InstallRuntimeMutator", "request", req)
+
+	pid, err := s.crClient.GetPidFromContainerID(ctx, req.ContainerId)
+	if err != nil {
+		log.Error(err, "GetPidFromContainerID")
+		return &pb.RuntimeMutatorResponse{Success: false, Message: err.Error()}, err
+	}
+
+	// Find Java process in container
+	containerPids := []uint32{pid}
+	childPids, err := util.GetChildProcesses(pid, log)
+	if err != nil {
+		log.Error(err, "GetChildProcesses")
+	}
+	containerPids = append(containerPids, childPids...)
+
+	var javaPid uint32
+	for _, containerPid := range containerPids {
+		name, err := util.ReadCommName(int(containerPid))
+		if err != nil {
+			log.Error(err, "ReadCommName")
+			continue
+		}
+		if name == "java\n" {
+			javaPid = containerPid
+			break
+		}
+	}
+
+	if javaPid == 0 {
+		err := errors.New("no Java process found in container")
+		log.Error(err, "InstallRuntimeMutator")
+		return &pb.RuntimeMutatorResponse{Success: false, Message: err.Error()}, err
+	}
+
+	// Build agent path - assume mutator-agent.jar is in chaos-daemon image
+	agentPath := "/usr/local/chaos-mesh/mutator-agent.jar"
+
+	// Build JVM arguments
+	jvmArgs := fmt.Sprintf("mutator_action=%s,mutator_class=%s,mutator_method=%s",
+		req.Action, req.Class, req.Method)
+
+	if req.Signature != "" {
+		jvmArgs += fmt.Sprintf(",mutator_signature=%s", req.Signature)
+	}
+
+	if req.Action == "constant" {
+		jvmArgs += fmt.Sprintf(",mutator_from=%s,mutator_to=%s", req.From, req.To)
+	} else if req.Action == "operator" || req.Action == "string" {
+		jvmArgs += fmt.Sprintf(",mutator_strategy=%s", req.Strategy)
+	}
+
+	// Use jattach to load the agent
+	jattachCmd := fmt.Sprintf("jattach %d load instrument false '%s=%s'", javaPid, agentPath, jvmArgs)
+
+	processBuilder := bpm.DefaultProcessBuilder("sh", "-c", jattachCmd).SetContext(ctx)
+	if req.EnterNS {
+		processBuilder = processBuilder.SetNS(pid, bpm.MountNS)
+	}
+
+	output, err := processBuilder.Build(ctx).CombinedOutput()
+	if err != nil {
+		log.Error(err, "failed to install runtime mutator", "output", string(output))
+		return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
+	}
+
+	log.Info("runtime mutator installed successfully", "output", string(output))
+	return &pb.RuntimeMutatorResponse{Success: true, Message: "Runtime mutator installed successfully"}, nil
+}
+
+func (s *DaemonServer) UninstallRuntimeMutator(ctx context.Context,
+	req *pb.RuntimeMutatorRequest) (*empty.Empty, error) {
+	log := s.getLoggerFromContext(ctx)
+	log.Info("UninstallRuntimeMutator", "request", req)
+
+	pid, err := s.crClient.GetPidFromContainerID(ctx, req.ContainerId)
+	if err != nil {
+		log.Error(err, "GetPidFromContainerID")
+		return nil, err
+	}
+
+	// Find Java process in container
+	containerPids := []uint32{pid}
+	childPids, err := util.GetChildProcesses(pid, log)
+	if err != nil {
+		log.Error(err, "GetChildProcesses")
+	}
+	containerPids = append(containerPids, childPids...)
+
+	var javaPid uint32
+	for _, containerPid := range containerPids {
+		name, err := util.ReadCommName(int(containerPid))
+		if err != nil {
+			log.Error(err, "ReadCommName")
+			continue
+		}
+		if name == "java\n" {
+			javaPid = containerPid
+			break
+		}
+	}
+
+	if javaPid == 0 {
+		err := errors.New("no Java process found in container")
+		log.Error(err, "UninstallRuntimeMutator")
+		return nil, err
+	}
+
+	// Connect to the mutator control API to disable mutations
+	controlURL := fmt.Sprintf("http://localhost:%d/mutations/disable", req.Port)
+
+	processBuilder := bpm.DefaultProcessBuilder("curl", "-X", "POST", controlURL).SetContext(ctx)
+	if req.EnterNS {
+		processBuilder = processBuilder.SetNS(pid, bpm.NetNS)
+	}
+
+	output, err := processBuilder.Build(ctx).CombinedOutput()
+	if err != nil {
+		// If the mutator is not running or already disabled, this is not an error
+		if strings.Contains(string(output), "Connection refused") {
+			log.Info("mutator control API not available, agent may not be running")
+			return &empty.Empty{}, nil
+		}
+		log.Error(err, "failed to disable mutations", "output", string(output))
+		return nil, err
+	}
+
+	log.Info("runtime mutator disabled successfully", "output", string(output))
+	return &empty.Empty{}, nil
+}
+
 func writeDataIntoFile(data string, filename string) (string, error) {
 	tmpfile, err := os.CreateTemp("", filename)
 	if err != nil {

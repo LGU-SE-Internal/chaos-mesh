@@ -781,6 +781,69 @@ func TestPodChaosListChaos(t *testing.T) {
 	chaos.ListChaos()
 }
 
+func TestRuntimeMutatorChaosIsDeleted(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &RuntimeMutatorChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.IsDeleted()
+}
+
+func TestRuntimeMutatorChaosIsIsPaused(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &RuntimeMutatorChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.IsPaused()
+}
+
+func TestRuntimeMutatorChaosGetDuration(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &RuntimeMutatorChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.Spec.GetDuration()
+}
+
+func TestRuntimeMutatorChaosGetStatus(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &RuntimeMutatorChaos{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.GetStatus()
+}
+
+func TestRuntimeMutatorChaosGetSpecAndMetaString(t *testing.T) {
+	g := NewGomegaWithT(t)
+	chaos := &RuntimeMutatorChaos{}
+	err := faker.FakeData(chaos)
+	g.Expect(err).To(BeNil())
+	chaos.GetSpecAndMetaString()
+}
+
+func TestRuntimeMutatorChaosListChaos(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	chaos := &RuntimeMutatorChaosList{}
+	err := faker.FakeData(chaos)
+
+	g.Expect(err).To(BeNil())
+
+	chaos.ListChaos()
+}
+
 func TestStressChaosIsDeleted(t *testing.T) {
 	g := NewGomegaWithT(t)
 

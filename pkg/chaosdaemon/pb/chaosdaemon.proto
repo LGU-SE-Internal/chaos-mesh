@@ -32,6 +32,10 @@ service ChaosDaemon {
   rpc InstallJVMRules(InstallJVMRulesRequest) returns (google.protobuf.Empty) {}
 
   rpc UninstallJVMRules(UninstallJVMRulesRequest) returns (google.protobuf.Empty) {}
+
+  rpc InstallRuntimeMutator(RuntimeMutatorRequest) returns (RuntimeMutatorResponse) {}
+
+  rpc UninstallRuntimeMutator(RuntimeMutatorRequest) returns (google.protobuf.Empty) {}
 }
 
 message TcHandle {
@@ -317,4 +321,22 @@ message ApplyBlockChaosResponse {
 
 message RecoverBlockChaosRequest {
   int32 injection_id = 1;
+}
+
+message RuntimeMutatorRequest {
+  string container_id = 1;
+  string action = 2;
+  string class = 3;
+  string method = 4;
+  string signature = 5;
+  string from = 6;
+  string to = 7;
+  string strategy = 8;
+  int32 port = 9;
+  bool enterNS = 10;
+}
+
+message RuntimeMutatorResponse {
+  bool success = 1;
+  string message = 2;
 }
