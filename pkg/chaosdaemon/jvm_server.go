@@ -235,8 +235,32 @@ func (s *DaemonServer) InstallRuntimeMutator(ctx context.Context,
 		return &pb.RuntimeMutatorResponse{Success: false, Message: err.Error()}, err
 	}
 
-	// Build agent path - assume mutator-agent.jar is in chaos-daemon image
-	agentPath := "/usr/local/chaos-mesh/mutator-agent.jar"
+	// Copy mutator-agent.jar into container's namespace if needed
+	bytemanHome := os.Getenv("BYTEMAN_HOME")
+	if len(bytemanHome) == 0 {
+		return &pb.RuntimeMutatorResponse{Success: false, Message: "BYTEMAN_HOME not set"}, errors.New("environment variable BYTEMAN_HOME not set")
+	}
+
+	agentPath := fmt.Sprintf("%s/lib/mutator-agent.jar", bytemanHome)
+	if req.EnterNS {
+		// Ensure byteman lib directory exists in container
+		processBuilder := bpm.DefaultProcessBuilder("sh", "-c", fmt.Sprintf("mkdir -p %s/lib", bytemanHome)).SetContext(ctx).SetNS(pid, bpm.MountNS)
+		output, err := processBuilder.Build(ctx).CombinedOutput()
+		if err != nil {
+			log.Error(err, "failed to create byteman directory in container", "output", string(output))
+			return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
+		}
+
+		// Copy jar file
+		source := agentPath
+		dest := agentPath
+		output, err = copyFileAcrossNS(ctx, source, dest, pid)
+		if err != nil {
+			log.Error(err, "failed to copy mutator-agent.jar", "output", string(output))
+			return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
+		}
+		log.Info("copied mutator-agent.jar to container", "output", string(output))
+	}
 
 	// Build JVM arguments
 	jvmArgs := fmt.Sprintf("mutator_action=%s,mutator_class=%s,mutator_method=%s",

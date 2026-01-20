@@ -3012,6 +3012,172 @@ spec:
                 - mode
                 - selector
                 type: object
+              runtimemutatorChaos:
+                description: RuntimeMutatorChaosSpec defines the desired state of
+                  RuntimeMutatorChaos
+                properties:
+                  action:
+                    description: |-
+                      Action defines the specific runtime mutator chaos action.
+                      Supported action: constant;operator;string
+                    enum:
+                    - constant
+                    - operator
+                    - string
+                    type: string
+                  class:
+                    description: Java class to target for mutation
+                    type: string
+                  containerNames:
+                    description: |-
+                      ContainerNames indicates list of the name of affected container.
+                      If not set, the first container will be injected
+                    items:
+                      type: string
+                    type: array
+                  duration:
+                    description: Duration represents the duration of the chaos action
+                    type: string
+                  from:
+                    description: 'For constant mutation: the original value to replace'
+                    type: string
+                  method:
+                    description: Method in the Java class to target for mutation
+                    type: string
+                  mode:
+                    description: |-
+                      Mode defines the mode to run chaos action.
+                      Supported mode: one / all / fixed / fixed-percent / random-max-percent
+                    enum:
+                    - one
+                    - all
+                    - fixed
+                    - fixed-percent
+                    - random-max-percent
+                    type: string
+                  port:
+                    description: The port of the runtime mutator agent server, default
+                      9090
+                    format: int32
+                    type: integer
+                  remoteCluster:
+                    description: RemoteCluster represents the remote cluster where
+                      the chaos will be deployed
+                    type: string
+                  selector:
+                    description: Selector is used to select pods that are used to
+                      inject chaos action.
+                    properties:
+                      annotationSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select objects.
+                          A selector based on annotations.
+                        type: object
+                      expressionSelectors:
+                        description: |-
+                          a slice of label selector expressions that can be used to select objects.
+                          A list of selectors based on set-based label expressions.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      fieldSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select objects.
+                          A selector based on fields.
+                        type: object
+                      labelSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select objects.
+                          A selector based on labels.
+                        type: object
+                      namespaces:
+                        description: Namespaces is a set of namespace to which objects
+                          belong.
+                        items:
+                          type: string
+                        type: array
+                      nodeSelectors:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Map of string keys and values that can be used to select nodes.
+                          Selector which must match a node's labels,
+                          and objects must belong to these selected nodes.
+                        type: object
+                      nodes:
+                        description: Nodes is a set of node name and objects must
+                          belong to these nodes.
+                        items:
+                          type: string
+                        type: array
+                      podPhaseSelectors:
+                        description: |-
+                          PodPhaseSelectors is a set of condition of a pod at the current time.
+                          supported value: Pending / Running / Succeeded / Failed / Unknown
+                        items:
+                          type: string
+                        type: array
+                      pods:
+                        additionalProperties:
+                          items:
+                            type: string
+                          type: array
+                        description: |-
+                          Pods is a map of string keys and a set values that used to select pods.
+                          The key defines the namespace which pods belong,
+                          and the each values is a set of pod names.
+                        type: object
+                    type: object
+                  strategy:
+                    description: 'For operator/string mutation: the mutation strategy'
+                    type: string
+                  to:
+                    description: 'For constant mutation: the new value to inject'
+                    type: string
+                  value:
+                    description: |-
+                      Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
+                      If `FixedMode`, provide an integer of pods to do chaos action.
+                      If `FixedPercentMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+                      IF `RandomMaxPercentMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
+                    type: string
+                required:
+                - action
+                - mode
+                - selector
+                type: object
               schedule:
                 type: string
               startingDeadlineSeconds:
@@ -6457,6 +6623,177 @@ spec:
                           - mode
                           - selector
                           type: object
+                        runtimemutatorChaos:
+                          description: RuntimeMutatorChaosSpec defines the desired
+                            state of RuntimeMutatorChaos
+                          properties:
+                            action:
+                              description: |-
+                                Action defines the specific runtime mutator chaos action.
+                                Supported action: constant;operator;string
+                              enum:
+                              - constant
+                              - operator
+                              - string
+                              type: string
+                            class:
+                              description: Java class to target for mutation
+                              type: string
+                            containerNames:
+                              description: |-
+                                ContainerNames indicates list of the name of affected container.
+                                If not set, the first container will be injected
+                              items:
+                                type: string
+                              type: array
+                            duration:
+                              description: Duration represents the duration of the
+                                chaos action
+                              type: string
+                            from:
+                              description: 'For constant mutation: the original value
+                                to replace'
+                              type: string
+                            method:
+                              description: Method in the Java class to target for
+                                mutation
+                              type: string
+                            mode:
+                              description: |-
+                                Mode defines the mode to run chaos action.
+                                Supported mode: one / all / fixed / fixed-percent / random-max-percent
+                              enum:
+                              - one
+                              - all
+                              - fixed
+                              - fixed-percent
+                              - random-max-percent
+                              type: string
+                            port:
+                              description: The port of the runtime mutator agent server,
+                                default 9090
+                              format: int32
+                              type: integer
+                            remoteCluster:
+                              description: RemoteCluster represents the remote cluster
+                                where the chaos will be deployed
+                              type: string
+                            selector:
+                              description: Selector is used to select pods that are
+                                used to inject chaos action.
+                              properties:
+                                annotationSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select objects.
+                                    A selector based on annotations.
+                                  type: object
+                                expressionSelectors:
+                                  description: |-
+                                    a slice of label selector expressions that can be used to select objects.
+                                    A list of selectors based on set-based label expressions.
+                                  items:
+                                    description: |-
+                                      A label selector requirement is a selector that contains values, a key, and an operator that
+                                      relates the key and values.
+                                    properties:
+                                      key:
+                                        description: key is the label key that the
+                                          selector applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          operator represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists and DoesNotExist.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          values is an array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. This array is replaced during a strategic
+                                          merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                fieldSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select objects.
+                                    A selector based on fields.
+                                  type: object
+                                labelSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select objects.
+                                    A selector based on labels.
+                                  type: object
+                                namespaces:
+                                  description: Namespaces is a set of namespace to
+                                    which objects belong.
+                                  items:
+                                    type: string
+                                  type: array
+                                nodeSelectors:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    Map of string keys and values that can be used to select nodes.
+                                    Selector which must match a node's labels,
+                                    and objects must belong to these selected nodes.
+                                  type: object
+                                nodes:
+                                  description: Nodes is a set of node name and objects
+                                    must belong to these nodes.
+                                  items:
+                                    type: string
+                                  type: array
+                                podPhaseSelectors:
+                                  description: |-
+                                    PodPhaseSelectors is a set of condition of a pod at the current time.
+                                    supported value: Pending / Running / Succeeded / Failed / Unknown
+                                  items:
+                                    type: string
+                                  type: array
+                                pods:
+                                  additionalProperties:
+                                    items:
+                                      type: string
+                                    type: array
+                                  description: |-
+                                    Pods is a map of string keys and a set values that used to select pods.
+                                    The key defines the namespace which pods belong,
+                                    and the each values is a set of pod names.
+                                  type: object
+                              type: object
+                            strategy:
+                              description: 'For operator/string mutation: the mutation
+                                strategy'
+                              type: string
+                            to:
+                              description: 'For constant mutation: the new value to
+                                inject'
+                              type: string
+                            value:
+                              description: |-
+                                Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
+                                If `FixedMode`, provide an integer of pods to do chaos action.
+                                If `FixedPercentMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+                                IF `RandomMaxPercentMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
+                              type: string
+                          required:
+                          - action
+                          - mode
+                          - selector
+                          type: object
                         schedule:
                           description: Schedule describe the Schedule(describing scheduled
                             chaos) to be injected with chaos nodes. Only used when
@@ -9530,6 +9867,177 @@ spec:
                                         and the each values is a set of pod names.
                                       type: object
                                   type: object
+                                value:
+                                  description: |-
+                                    Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
+                                    If `FixedMode`, provide an integer of pods to do chaos action.
+                                    If `FixedPercentMode`, provide a number from 0-100 to specify the percent of pods the server can do chaos action.
+                                    IF `RandomMaxPercentMode`,  provide a number from 0-100 to specify the max percent of pods to do chaos action
+                                  type: string
+                              required:
+                              - action
+                              - mode
+                              - selector
+                              type: object
+                            runtimemutatorChaos:
+                              description: RuntimeMutatorChaosSpec defines the desired
+                                state of RuntimeMutatorChaos
+                              properties:
+                                action:
+                                  description: |-
+                                    Action defines the specific runtime mutator chaos action.
+                                    Supported action: constant;operator;string
+                                  enum:
+                                  - constant
+                                  - operator
+                                  - string
+                                  type: string
+                                class:
+                                  description: Java class to target for mutation
+                                  type: string
+                                containerNames:
+                                  description: |-
+                                    ContainerNames indicates list of the name of affected container.
+                                    If not set, the first container will be injected
+                                  items:
+                                    type: string
+                                  type: array
+                                duration:
+                                  description: Duration represents the duration of
+                                    the chaos action
+                                  type: string
+                                from:
+                                  description: 'For constant mutation: the original
+                                    value to replace'
+                                  type: string
+                                method:
+                                  description: Method in the Java class to target
+                                    for mutation
+                                  type: string
+                                mode:
+                                  description: |-
+                                    Mode defines the mode to run chaos action.
+                                    Supported mode: one / all / fixed / fixed-percent / random-max-percent
+                                  enum:
+                                  - one
+                                  - all
+                                  - fixed
+                                  - fixed-percent
+                                  - random-max-percent
+                                  type: string
+                                port:
+                                  description: The port of the runtime mutator agent
+                                    server, default 9090
+                                  format: int32
+                                  type: integer
+                                remoteCluster:
+                                  description: RemoteCluster represents the remote
+                                    cluster where the chaos will be deployed
+                                  type: string
+                                selector:
+                                  description: Selector is used to select pods that
+                                    are used to inject chaos action.
+                                  properties:
+                                    annotationSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select objects.
+                                        A selector based on annotations.
+                                      type: object
+                                    expressionSelectors:
+                                      description: |-
+                                        a slice of label selector expressions that can be used to select objects.
+                                        A list of selectors based on set-based label expressions.
+                                      items:
+                                        description: |-
+                                          A label selector requirement is a selector that contains values, a key, and an operator that
+                                          relates the key and values.
+                                        properties:
+                                          key:
+                                            description: key is the label key that
+                                              the selector applies to.
+                                            type: string
+                                          operator:
+                                            description: |-
+                                              operator represents a key's relationship to a set of values.
+                                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                                            type: string
+                                          values:
+                                            description: |-
+                                              values is an array of string values. If the operator is In or NotIn,
+                                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                              the values array must be empty. This array is replaced during a strategic
+                                              merge patch.
+                                            items:
+                                              type: string
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                        required:
+                                        - key
+                                        - operator
+                                        type: object
+                                      type: array
+                                    fieldSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select objects.
+                                        A selector based on fields.
+                                      type: object
+                                    labelSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select objects.
+                                        A selector based on labels.
+                                      type: object
+                                    namespaces:
+                                      description: Namespaces is a set of namespace
+                                        to which objects belong.
+                                      items:
+                                        type: string
+                                      type: array
+                                    nodeSelectors:
+                                      additionalProperties:
+                                        type: string
+                                      description: |-
+                                        Map of string keys and values that can be used to select nodes.
+                                        Selector which must match a node's labels,
+                                        and objects must belong to these selected nodes.
+                                      type: object
+                                    nodes:
+                                      description: Nodes is a set of node name and
+                                        objects must belong to these nodes.
+                                      items:
+                                        type: string
+                                      type: array
+                                    podPhaseSelectors:
+                                      description: |-
+                                        PodPhaseSelectors is a set of condition of a pod at the current time.
+                                        supported value: Pending / Running / Succeeded / Failed / Unknown
+                                      items:
+                                        type: string
+                                      type: array
+                                    pods:
+                                      additionalProperties:
+                                        items:
+                                          type: string
+                                        type: array
+                                      description: |-
+                                        Pods is a map of string keys and a set values that used to select pods.
+                                        The key defines the namespace which pods belong,
+                                        and the each values is a set of pod names.
+                                      type: object
+                                  type: object
+                                strategy:
+                                  description: 'For operator/string mutation: the
+                                    mutation strategy'
+                                  type: string
+                                to:
+                                  description: 'For constant mutation: the new value
+                                    to inject'
+                                  type: string
                                 value:
                                   description: |-
                                     Value is required when the mode is set to `FixedMode` / `FixedPercentMode` / `RandomMaxPercentMode`.
