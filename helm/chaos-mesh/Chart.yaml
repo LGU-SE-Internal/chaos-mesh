@@ -20,7 +20,7 @@ icon: https://raw.githubusercontent.com/chaos-mesh/chaos-mesh/master/static/logo
 sources:
   - https://github.com/chaos-mesh/chaos-mesh
 name: chaos-mesh
-version: "0.0.0"
+version: "0.0.1-runtime-mutator"
 keywords:
   - chaos-engineering
   - resiliency
