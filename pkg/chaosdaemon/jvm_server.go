@@ -242,25 +242,25 @@ func (s *DaemonServer) InstallRuntimeMutator(ctx context.Context,
 	}
 
 	agentPath := fmt.Sprintf("%s/lib/mutator-agent.jar", bytemanHome)
-	if req.EnterNS {
-		// Ensure byteman lib directory exists in container
-		processBuilder := bpm.DefaultProcessBuilder("sh", "-c", fmt.Sprintf("mkdir -p %s/lib", bytemanHome)).SetContext(ctx).SetNS(pid, bpm.MountNS)
-		output, err := processBuilder.Build(ctx).CombinedOutput()
-		if err != nil {
-			log.Error(err, "failed to create byteman directory in container", "output", string(output))
-			return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
-		}
 
-		// Copy jar file
-		source := agentPath
-		dest := agentPath
-		output, err = copyFileAcrossNS(ctx, source, dest, pid)
-		if err != nil {
-			log.Error(err, "failed to copy mutator-agent.jar", "output", string(output))
-			return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
-		}
-		log.Info("copied mutator-agent.jar to container", "output", string(output))
+	// Always copy agent JAR to container regardless of EnterNS flag
+	// Ensure byteman lib directory exists in container
+	processBuilder := bpm.DefaultProcessBuilder("sh", "-c", fmt.Sprintf("mkdir -p %s/lib", bytemanHome)).SetContext(ctx).SetNS(pid, bpm.MountNS)
+	output, err := processBuilder.Build(ctx).CombinedOutput()
+	if err != nil {
+		log.Error(err, "failed to create byteman directory in container", "output", string(output))
+		return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
 	}
+
+	// Copy jar file
+	source := agentPath
+	dest := agentPath
+	output, err = copyFileAcrossNS(ctx, source, dest, pid)
+	if err != nil {
+		log.Error(err, "failed to copy mutator-agent.jar", "output", string(output))
+		return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
+	}
+	log.Info("copied mutator-agent.jar to container", "output", string(output))
 
 	// Build JVM arguments
 	jvmArgs := fmt.Sprintf("mutator_action=%s,mutator_class=%s,mutator_method=%s",
@@ -279,12 +279,12 @@ func (s *DaemonServer) InstallRuntimeMutator(ctx context.Context,
 	// Use jattach to load the agent
 	jattachCmd := fmt.Sprintf("jattach %d load instrument false '%s=%s'", javaPid, agentPath, jvmArgs)
 
-	processBuilder := bpm.DefaultProcessBuilder("sh", "-c", jattachCmd).SetContext(ctx)
+	processBuilder = bpm.DefaultProcessBuilder("sh", "-c", jattachCmd).SetContext(ctx)
 	if req.EnterNS {
 		processBuilder = processBuilder.SetNS(pid, bpm.MountNS)
 	}
 
-	output, err := processBuilder.Build(ctx).CombinedOutput()
+	output, err = processBuilder.Build(ctx).CombinedOutput()
 	if err != nil {
 		log.Error(err, "failed to install runtime mutator", "output", string(output))
 		return &pb.RuntimeMutatorResponse{Success: false, Message: string(output)}, err
@@ -332,26 +332,36 @@ func (s *DaemonServer) UninstallRuntimeMutator(ctx context.Context,
 		return nil, err
 	}
 
-	// Connect to the mutator control API to disable mutations
-	controlURL := fmt.Sprintf("http://localhost:%d/mutations/disable", req.Port)
+	// Use jattach to re-attach with enabled=false to disable mutations
+	// This is more reliable than curl as it doesn't require curl to be installed in the container
+	bytemanHome := os.Getenv("BYTEMAN_HOME")
+	if len(bytemanHome) == 0 {
+		return nil, errors.New("environment variable BYTEMAN_HOME not set")
+	}
 
-	processBuilder := bpm.DefaultProcessBuilder("curl", "-X", "POST", controlURL).SetContext(ctx)
+	agentPath := fmt.Sprintf("%s/lib/mutator-agent.jar", bytemanHome)
+
+	// Re-attach with enabled=false,clear=true to disable and clear all mutations
+	jattachCmd := fmt.Sprintf("jattach %d load instrument false '%s=enabled=false,clear=true'", javaPid, agentPath)
+
+	processBuilder := bpm.DefaultProcessBuilder("sh", "-c", jattachCmd).SetContext(ctx)
 	if req.EnterNS {
-		processBuilder = processBuilder.SetNS(pid, bpm.NetNS)
+		processBuilder = processBuilder.SetNS(pid, bpm.MountNS)
 	}
 
 	output, err := processBuilder.Build(ctx).CombinedOutput()
 	if err != nil {
-		// If the mutator is not running or already disabled, this is not an error
-		if strings.Contains(string(output), "Connection refused") {
-			log.Info("mutator control API not available, agent may not be running")
+		// If re-attachment fails, the agent may not be running, which is fine
+		if strings.Contains(string(output), "Could not attach") ||
+			strings.Contains(string(output), "No such process") {
+			log.Info("jattach failed, agent may not be running", "output", string(output))
 			return &empty.Empty{}, nil
 		}
-		log.Error(err, "failed to disable mutations", "output", string(output))
+		log.Error(err, "failed to disable mutations via jattach", "output", string(output))
 		return nil, err
 	}
 
-	log.Info("runtime mutator disabled successfully", "output", string(output))
+	log.Info("runtime mutator disabled successfully via jattach re-attachment", "output", string(output))
 	return &empty.Empty{}, nil
 }
 

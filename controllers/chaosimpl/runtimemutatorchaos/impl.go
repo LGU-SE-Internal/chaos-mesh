@@ -25,6 +25,7 @@ import (
 	"github.com/chaos-mesh/chaos-mesh/api/v1alpha1"
 	"github.com/chaos-mesh/chaos-mesh/controllers/chaosimpl/types"
 	"github.com/chaos-mesh/chaos-mesh/controllers/chaosimpl/utils"
+	"github.com/chaos-mesh/chaos-mesh/pkg/chaosdaemon/pb"
 )
 
 type Impl struct {
@@ -57,7 +58,6 @@ func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Reco
 	}
 
 	// Build the mutation configuration
-	// TODO: Implement protobuf message in cm-004
 	impl.Log.Info("installing runtime mutator", "container", decodedContainer.ContainerId, "action", runtimeMutatorChaos.Spec.Action, "class", runtimeMutatorChaos.Spec.Class, "method", runtimeMutatorChaos.Spec.Method)
 
 	// Validate the spec based on action type
@@ -72,10 +72,45 @@ func (impl *Impl) Apply(ctx context.Context, index int, records []*v1alpha1.Reco
 		}
 	}
 
-	// TODO: Call decodedContainer.PbClient.InstallRuntimeMutator when protobuf is implemented
-	// For now, just log that we would install the mutator
-	impl.Log.Info("would install runtime mutator", "container", decodedContainer.ContainerId, "action", runtimeMutatorChaos.Spec.Action)
+	// Call chaos-daemon to install runtime mutator
+	port := int32(9090)
+	if runtimeMutatorChaos.Spec.Port != 0 {
+		port = runtimeMutatorChaos.Spec.Port
+	}
 
+	req := &pb.RuntimeMutatorRequest{
+		ContainerId: decodedContainer.ContainerId,
+		Action:      string(runtimeMutatorChaos.Spec.Action),
+		Class:       runtimeMutatorChaos.Spec.Class,
+		Method:      runtimeMutatorChaos.Spec.Method,
+		Port:        port,
+		EnterNS:     false,
+	}
+
+	if runtimeMutatorChaos.Spec.From != nil {
+		req.From = *runtimeMutatorChaos.Spec.From
+	}
+
+	if runtimeMutatorChaos.Spec.To != nil {
+		req.To = *runtimeMutatorChaos.Spec.To
+	}
+
+	if runtimeMutatorChaos.Spec.Strategy != nil {
+		req.Strategy = *runtimeMutatorChaos.Spec.Strategy
+	}
+
+	resp, err := decodedContainer.PbClient.InstallRuntimeMutator(ctx, req)
+	if err != nil {
+		impl.Log.Error(err, "failed to install runtime mutator")
+		return v1alpha1.NotInjected, err
+	}
+
+	if !resp.Success {
+		impl.Log.Error(errors.New(resp.Message), "runtime mutator installation failed")
+		return v1alpha1.NotInjected, errors.New(resp.Message)
+	}
+
+	impl.Log.Info("runtime mutator installed successfully", "container", decodedContainer.ContainerId, "message", resp.Message)
 	return v1alpha1.Injected, nil
 }
 
@@ -102,10 +137,30 @@ func (impl *Impl) Recover(ctx context.Context, index int, records []*v1alpha1.Re
 
 	impl.Log.Info("uninstalling runtime mutator", "container", decodedContainer.ContainerId)
 
-	// TODO: Call decodedContainer.PbClient.UninstallRuntimeMutator when protobuf is implemented
-	// For now, just log that we would uninstall the mutator
-	impl.Log.Info("would uninstall runtime mutator", "container", decodedContainer.ContainerId)
+	runtimeMutatorChaos := obj.(*v1alpha1.RuntimeMutatorChaos)
 
+	// Call chaos-daemon to uninstall runtime mutator
+	port := int32(9090)
+	if runtimeMutatorChaos.Spec.Port != 0 {
+		port = runtimeMutatorChaos.Spec.Port
+	}
+
+	req := &pb.RuntimeMutatorRequest{
+		ContainerId: decodedContainer.ContainerId,
+		Action:      string(runtimeMutatorChaos.Spec.Action),
+		Class:       runtimeMutatorChaos.Spec.Class,
+		Method:      runtimeMutatorChaos.Spec.Method,
+		Port:        port,
+		EnterNS:     false,
+	}
+
+	_, err = decodedContainer.PbClient.UninstallRuntimeMutator(ctx, req)
+	if err != nil {
+		impl.Log.Error(err, "failed to uninstall runtime mutator")
+		return v1alpha1.Injected, err
+	}
+
+	impl.Log.Info("runtime mutator uninstalled successfully", "container", decodedContainer.ContainerId)
 	return v1alpha1.NotInjected, nil
 }
 
@@ -125,7 +180,8 @@ func NewImpl(client client.Client, log logr.Logger, decoder *utils.ContainerReco
 
 // Module creates a new fx.Module for RuntimeMutatorChaos
 var Module = fx.Provide(
-	func(client client.Client, log logr.Logger, decoder *utils.ContainerRecordDecoder) *types.ChaosImplPair {
-		return NewImpl(client, log, decoder)
+	fx.Annotated{
+		Group:  "impl",
+		Target: NewImpl,
 	},
 )

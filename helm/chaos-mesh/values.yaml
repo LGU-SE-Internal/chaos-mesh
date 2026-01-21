@@ -203,9 +203,9 @@ chaosDaemon:
   podSecurityPolicy: false
   # runtime specifies which container runtime to use. Currently
   # we only supports docker, containerd and CRI-O.
-  runtime: docker
+  runtime: containerd
   # socketPath specifies the path of container runtime socket on the host.
-  socketPath: /var/run/docker.sock
+  socketPath: /run/containerd/containerd.sock
 
   # If you are using Kind or using containerd as CRI, you can use the
   # config below to use containerd as the runtime in chaos-daemon.

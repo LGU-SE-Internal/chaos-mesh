@@ -16,11 +16,15 @@ RUN mkdir -p /tmp/bin && \
     mv /usr/local/byteman-chaos-mesh-download-v4.0.24-0.12 /tmp/byteman && \
     rm /usr/local/byteman.tar.gz
 
-# Download java-runtime-mutator agent jar (requires release to be created)
-RUN curl -L https://github.com/LGU-SE-Internal/java-runtime-mutator/releases/download/v1.0.0/mutator-agent-1.0.0.jar -o /tmp/byteman/lib/mutator-agent.jar
+# Copy java-runtime-mutator agent jar from local build
+COPY mutator-agent.jar /tmp/byteman/lib/mutator-agent.jar
 
 # toda doesn't support arm64 yet
 RUN curl -L https://github.com/chaos-mesh/toda/releases/download/v0.2.4/toda-linux-amd64.tar.gz | tar xz -C /tmp/bin
+
+# Download jattach for JVM agent attachment
+RUN curl -L https://github.com/jattach/jattach/releases/download/v2.2/jattach -o /tmp/bin/jattach && \
+    chmod +x /tmp/bin/jattach
 RUN case "$TARGET_PLATFORM" in \
     'amd64') \
     export NSEXEC_ARCH='x86_64'; \
