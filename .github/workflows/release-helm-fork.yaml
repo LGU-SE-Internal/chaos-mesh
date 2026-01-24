@@ -1,0 +1,221 @@
+# Helm Chart Release Workflow for LGU-SE-Internal Chaos Mesh Fork
+#
+# This workflow packages and publishes the Chaos Mesh Helm chart with
+# RuntimeMutatorChaos support to GitHub Pages and optionally to GitHub
+# Container Registry (OCI).
+#
+# Trigger: Push tags matching v*.*.* (e.g., v2.7.0-runtime-mutator.1)
+#
+# Usage:
+#   git tag v2.7.0-runtime-mutator.1
+#   git push origin v2.7.0-runtime-mutator.1
+
+name: Release Helm Chart (Fork)
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+  id-token: write
+
+env:
+  HELM_VERSION: "3.14.0"
+  CHART_PATH: "helm/chaos-mesh"
+
+jobs:
+  validate-tag:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
+    steps:
+      - name: Validate tag format
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::This workflow must be triggered by a tag"
+            exit 1
+          fi
+          TAG=${GITHUB_REF_NAME}
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Tag must match v*.*.* format (e.g., v2.7.0-runtime-mutator.1)"
+            exit 1
+          fi
+          echo "Tag ${TAG} is valid"
+
+      - name: Extract version
+        id: extract
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          # Remove the leading 'v'
+          VERSION=${TAG#v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+          # Check if this is a pre-release (contains hyphen after semver)
+          if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
+          echo "Version: ${VERSION}"
+          echo "Is pre-release: $(if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo false; else echo true; fi)"
+
+  release-chart:
+    name: Package and Release Helm Chart
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Update Chart.yaml version
+        run: |
+          VERSION=${{ needs.validate-tag.outputs.version }}
+
+          # Update chart version and appVersion
+          sed -i "s/^version:.*/version: \"${VERSION}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+
+          # Update prerelease annotation
+          IS_PRERELEASE=${{ needs.validate-tag.outputs.is_prerelease }}
+          sed -i "s/artifacthub.io\/prerelease:.*/artifacthub.io\/prerelease: \"${IS_PRERELEASE}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+
+          echo "Updated Chart.yaml:"
+          cat ${{ env.CHART_PATH }}/Chart.yaml
+
+      - name: Lint Helm chart
+        run: |
+          helm lint ${{ env.CHART_PATH }}
+
+      - name: Package Helm chart
+        run: |
+          mkdir -p .cr-release-packages
+          helm package ${{ env.CHART_PATH }} --destination .cr-release-packages
+          ls -la .cr-release-packages/
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Update Helm repository index
+        run: |
+          cd gh-pages
+
+          # Copy the new chart package
+          cp ../.cr-release-packages/*.tgz .
+
+          # Generate or update index.yaml
+          if [ -f index.yaml ]; then
+            helm repo index . --url https://lgu-se-internal.github.io/chaos-mesh --merge index.yaml
+          else
+            helm repo index . --url https://lgu-se-internal.github.io/chaos-mesh
+          fi
+
+          echo "Repository index:"
+          cat index.yaml
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd gh-pages
+          git add .
+          VERSION=${{ needs.validate-tag.outputs.version }}
+          git commit -m "Release chaos-mesh chart v${VERSION}"
+          git push origin gh-pages
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "Chaos Mesh Helm Chart v${{ needs.validate-tag.outputs.version }}"
+          body: |
+            ## Chaos Mesh Helm Chart Release
+
+            This release includes the Helm chart for Chaos Mesh with RuntimeMutatorChaos support.
+
+            ### Installation
+
+            ```bash
+            # Add the Helm repository
+            helm repo add chaos-mesh-fork https://lgu-se-internal.github.io/chaos-mesh
+            helm repo update
+
+            # Install the chart
+            helm install chaos-mesh chaos-mesh-fork/chaos-mesh \
+              --namespace chaos-mesh \
+              --create-namespace \
+              --version ${{ needs.validate-tag.outputs.version }}
+            ```
+
+            ### OCI Registry (Alternative)
+
+            ```bash
+            helm install chaos-mesh oci://ghcr.io/lgu-se-internal/charts/chaos-mesh \
+              --namespace chaos-mesh \
+              --create-namespace \
+              --version ${{ needs.validate-tag.outputs.version }}
+            ```
+
+            ### What's New
+
+            - RuntimeMutatorChaos CRD for Java runtime mutation
+            - Support for constant, operator, and string mutations
+            - Integration with java-runtime-mutator agent
+          prerelease: ${{ needs.validate-tag.outputs.is_prerelease }}
+          files: |
+            .cr-release-packages/*.tgz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-oci:
+    name: Publish to OCI Registry
+    needs: [validate-tag, release-chart]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Update Chart.yaml version
+        run: |
+          VERSION=${{ needs.validate-tag.outputs.version }}
+          sed -i "s/^version:.*/version: \"${VERSION}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+
+      - name: Login to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package and push to OCI registry
+        run: |
+          helm package ${{ env.CHART_PATH }}
+          CHART_FILE=$(ls chaos-mesh-*.tgz)
+          helm push ${CHART_FILE} oci://ghcr.io/lgu-se-internal/charts
+          echo "Pushed ${CHART_FILE} to ghcr.io/lgu-se-internal/charts"
+
+      - name: Logout from registry
+        if: always()
+        run: |
+          helm registry logout ghcr.io || true
